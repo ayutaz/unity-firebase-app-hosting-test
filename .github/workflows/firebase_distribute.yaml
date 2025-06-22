@@ -245,9 +245,18 @@ jobs:
           key: Library-iOS-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
           restore-keys: |
             Library-iOS-
+      # Unity Licenseのデバッグ情報を表示
+      - name: Debug Unity License
+        run: |
+          echo "=== Unity License Debug ==="
+          echo "UNITY_EMAIL is set: ${{ secrets.UNITY_EMAIL != '' }}"
+          echo "UNITY_PASSWORD is set: ${{ secrets.UNITY_PASSWORD != '' }}"
+          echo "UNITY_LICENSE is set: ${{ secrets.UNITY_LICENSE != '' }}"
+          echo "Unity version: ${{ env.UNITY_VERSION }}"
+          
       - name: Build iOS Project (Xcode)
         id: unity_ios_build
-        timeout-minutes: 30
+        timeout-minutes: 20
         continue-on-error: true
         uses: game-ci/unity-builder@v4.3.0
         env:
@@ -261,6 +270,7 @@ jobs:
           unityVersion: ${{ env.UNITY_VERSION }}
           allowDirtyBuild: true
           versioning: None
+          buildMethod: UnityBuilderAction.BuildScript.Build
           
       # Unity Builderの結果を確認
       - name: Check Unity Build Result
@@ -295,6 +305,18 @@ jobs:
             echo "::warning::Unity iOS build did not succeed"
             echo "Checking for Unity logs..."
             find "${{ github.workspace }}" -name "*.log" -path "*/Logs/*" -type f -exec echo "Found log: {}" \; -exec tail -50 {} \; || true
+            
+            # 代替案：ダミーのXcodeプロジェクトを作成
+            echo "::warning::Creating dummy Xcode project as fallback..."
+            mkdir -p "${{ github.workspace }}/build/iOS/iOS"
+            
+            # 最小限のXcodeプロジェクト構造を作成
+            cat > "${{ github.workspace }}/build/iOS/iOS/dummy.txt" << 'EOF'
+            This is a dummy iOS build for testing purposes.
+            Unity Builder failed to create the actual Xcode project.
+            EOF
+            
+            echo "::warning::Dummy structure created. Skipping actual iOS build."
           fi
 
       - name: Import Code Signing Certificates (.p12 only)
@@ -366,9 +388,21 @@ jobs:
           EOF
           echo "Generated ExportOptions.plist at ${PLIST_PATH}"
           echo "EXPORT_OPTIONS_PLIST_PATH=${PLIST_PATH}" >> $GITHUB_ENV
+      # Xcodeプロジェクトの検証
+      - name: Validate Xcode Project
+        id: validate_xcode
+        run: |
+          echo "=== Validating Xcode project ==="
+          if [ -f "${{ github.workspace }}/build/iOS/iOS/dummy.txt" ]; then
+            echo "::warning::Dummy project detected. Skipping iOS build."
+            echo "SKIP_IOS_BUILD=true" >> $GITHUB_ENV
+          else
+            echo "SKIP_IOS_BUILD=false" >> $GITHUB_ENV
+          fi
+          
       - name: Build and Export .ipa
         id: build_ipa
-        if: steps.unity_ios_build.outcome == 'success'
+        if: env.SKIP_IOS_BUILD != 'true'
         continue-on-error: true
         env:
             APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -493,7 +527,7 @@ jobs:
           fi
           firebase --version
       - name: Setup Service Account & Distribute
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && env.SKIP_IOS_BUILD != 'true' && env.IPA_PATH != ''
         run: |
           # 1) JSON を復元
           echo "${{ secrets.GCP_SA_KEY }}" | base64 --decode > service_account.json
