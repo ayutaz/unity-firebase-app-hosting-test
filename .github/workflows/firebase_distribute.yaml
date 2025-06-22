@@ -547,6 +547,18 @@ jobs:
             rm -f profile_info.plist
           fi
 
+      # Team IDの環境変数設定を確認
+      - name: Verify Team ID Environment
+        run: |
+          echo "=== Team ID Verification ==="
+          echo "TEAM_ID from env: ${TEAM_ID}"
+          echo "TEAM_ID from secrets (direct): ${{ secrets.APPLE_TEAM_ID || secrets.IOS_DEVELOPMENT_TEAM }}"
+          if [ -z "${TEAM_ID}" ]; then
+            echo "::error::TEAM_ID environment variable is not set"
+            exit 1
+          fi
+          echo "✅ TEAM_ID is available: ${TEAM_ID}"
+          
       # ビルド前の環境確認
       - name: Pre-build Environment Check
         run: |

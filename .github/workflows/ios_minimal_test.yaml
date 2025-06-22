@@ -6,127 +6,47 @@ on:
     branches: [ fix/ios-build-workflow ]
 
 jobs:
-  minimal-ios-test:
-    name: Minimal iOS Build Test
+  test-minimal-ios:
+    name: Minimal iOS Test
     runs-on: macos-latest
     steps:
-      - name: Create Test Project
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        
+      - name: Check Environment
         run: |
-          echo "=== Creating minimal iOS test project ==="
+          echo "=== Environment ==="
+          echo "APPLE_TEAM_ID exists: ${{ secrets.APPLE_TEAM_ID != '' }}"
+          echo "IOS_DEVELOPMENT_TEAM exists: ${{ secrets.IOS_DEVELOPMENT_TEAM != '' }}"
+          echo "macOS version: $(sw_vers -productVersion)"
+          echo "Xcode version: $(xcodebuild -version | head -1)"
           
-          # Create simple source file
-          cat > test.swift << 'EOF'
-          import UIKit
-          
-          @main
-          class AppDelegate: UIResponder, UIApplicationDelegate {
-              var window: UIWindow?
-              
-              func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-                  return true
-              }
-          }
-          EOF
-          
-          # Create Info.plist
-          cat > Info.plist << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleDevelopmentRegion</key>
-              <string>en</string>
-              <key>CFBundleExecutable</key>
-              <string>TestApp</string>
-              <key>CFBundleIdentifier</key>
-              <string>com.yousan</string>
-              <key>CFBundleInfoDictionaryVersion</key>
-              <string>6.0</string>
-              <key>CFBundleName</key>
-              <string>TestApp</string>
-              <key>CFBundlePackageType</key>
-              <string>APPL</string>
-              <key>CFBundleShortVersionString</key>
-              <string>1.0</string>
-              <key>CFBundleVersion</key>
-              <string>1</string>
-              <key>LSRequiresIPhoneOS</key>
-              <true/>
-              <key>UIRequiredDeviceCapabilities</key>
-              <array>
-                  <string>armv7</string>
-              </array>
-              <key>UISupportedInterfaceOrientations</key>
-              <array>
-                  <string>UIInterfaceOrientationPortrait</string>
-              </array>
-          </dict>
-          </plist>
-          EOF
-          
-      - name: Test Build Without Signing
-        run: |
-          echo "=== Testing build without signing ==="
-          
-          # Compile Swift file
-          swiftc test.swift -target arm64-apple-ios12.0 \
-            -sdk $(xcrun --sdk iphoneos --show-sdk-path) \
-            -emit-executable -o TestApp || echo "Compilation failed"
-            
-          echo "Test completed"
-          
-      - name: Setup Certificates
+      - name: Test Certificate Import
         if: ${{ secrets.IOS_P12_BASE64 != '' }}
-        env:
-          P12_BASE64: ${{ secrets.IOS_P12_BASE64 }}
-          P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
         run: |
-          echo "=== Setting up certificates ==="
+          echo "=== Testing Certificate ==="
+          echo "${{ secrets.IOS_P12_BASE64 }}" | base64 --decode > cert.p12
           
-          # Import certificate
-          echo "$P12_BASE64" | base64 --decode > cert.p12
+          # 簡単なキーチェーン作成
+          security create-keychain -p test test.keychain
+          security unlock-keychain -p test test.keychain
+          security list-keychains -d user -s test.keychain
           
-          security create-keychain -p temp ios-build.keychain
-          security default-keychain -s ios-build.keychain
-          security unlock-keychain -p temp ios-build.keychain
-          security set-keychain-settings -lut 21600 ios-build.keychain
-          
-          security import cert.p12 -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k ios-build.keychain
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k temp ios-build.keychain
+          # 証明書インポートを試す
+          if security import cert.p12 -P "${{ secrets.IOS_P12_PASSWORD }}" -k test.keychain -T /usr/bin/codesign; then
+            echo "✅ Certificate imported successfully"
+            security find-identity -v -p codesigning test.keychain
+          else
+            echo "❌ Certificate import failed"
+          fi
           
           rm cert.p12
           
-          echo "=== Available certificates ==="
-          security find-identity -v -p codesigning
-          
-      - name: Test Codesign
-        if: ${{ secrets.IOS_DEVELOPMENT_TEAM != '' }}
-        env:
-          TEAM: ${{ secrets.IOS_DEVELOPMENT_TEAM }}
+      - name: Test Team ID
         run: |
-          echo "=== Testing codesign command ==="
-          
-          # Create a simple binary
-          echo "int main() { return 0; }" > test.c
-          clang test.c -o TestBinary
-          
-          # Try to sign it
-          codesign -s "iPhone Distribution" -f TestBinary || \
-          codesign -s "iPhone Developer" -f TestBinary || \
-          codesign -s "-" -f TestBinary || \
-          echo "Codesign failed"
-          
-          # Check signature
-          codesign -dv TestBinary || echo "No signature"
-          
-      - name: Summary
-        if: always()
-        run: |
-          echo "=== Summary ==="
-          echo "1. Certificates available:"
-          security find-identity -v -p codesigning | wc -l
-          echo ""
-          echo "2. Default keychain:"
-          security default-keychain
-          echo ""
-          echo "3. Test completed"
+          TEAM_ID="${{ secrets.APPLE_TEAM_ID || secrets.IOS_DEVELOPMENT_TEAM }}"
+          if [ -n "$TEAM_ID" ]; then
+            echo "✅ Team ID is set: ${TEAM_ID:0:4}****"
+          else
+            echo "❌ No Team ID found"
+          fi
