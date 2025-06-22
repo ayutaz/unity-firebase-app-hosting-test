@@ -1,0 +1,136 @@
+name: iOS Test Signing
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ fix/ios-build-workflow ]
+
+env:
+  UNITY_VERSION: '6000.0.43f1'
+
+jobs:
+  test-ios-signing:
+    name: Test iOS Signing Setup
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+        
+      # Step 1: 必要なSecretsの確認
+      - name: Check Required Secrets
+        run: |
+          echo "=== Checking Secrets ==="
+          echo "IOS_P12_BASE64: ${{ secrets.IOS_P12_BASE64 != '' && 'SET' || 'NOT SET' }}"
+          echo "IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD != '' && 'SET' || 'NOT SET' }}"
+          echo "IOS_MOBILEPROVISION_BASE64: ${{ secrets.IOS_MOBILEPROVISION_BASE64 != '' && 'SET' || 'NOT SET' }}"
+          echo "IOS_DEVELOPMENT_TEAM: ${{ secrets.IOS_DEVELOPMENT_TEAM != '' && 'SET' || 'NOT SET' }}"
+          echo "IOS_CODE_SIGN_IDENTITY: ${{ secrets.IOS_CODE_SIGN_IDENTITY != '' && 'SET' || 'NOT SET' }}"
+          echo "FIREBASE_IOS_APP_ID: ${{ secrets.FIREBASE_IOS_APP_ID != '' && 'SET' || 'NOT SET' }}"
+          
+      # Step 2: 証明書のインポートテスト
+      - name: Test Certificate Import
+        if: ${{ secrets.IOS_P12_BASE64 != '' }}
+        run: |
+          echo "=== Testing Certificate Import ==="
+          echo "${{ secrets.IOS_P12_BASE64 }}" | base64 --decode > certificate.p12
+          
+          # Create temporary keychain
+          KEYCHAIN_NAME="test-signing.keychain"
+          KEYCHAIN_PASSWORD="temp-password-$(date +%s)"
+          
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_NAME"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_NAME"
+          
+          # Import certificate
+          security import certificate.p12 -P "${{ secrets.IOS_P12_PASSWORD }}" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN_NAME" || {
+            echo "::error::Failed to import certificate"
+            exit 1
+          }
+          
+          # List certificates
+          security list-keychain -d user -s "$KEYCHAIN_NAME"
+          security find-identity -v -p codesigning "$KEYCHAIN_NAME"
+          
+          # Cleanup
+          rm -f certificate.p12
+          
+      # Step 3: プロビジョニングプロファイルのテスト
+      - name: Test Provisioning Profile
+        if: ${{ secrets.IOS_MOBILEPROVISION_BASE64 != '' }}
+        run: |
+          echo "=== Testing Provisioning Profile ==="
+          echo "${{ secrets.IOS_MOBILEPROVISION_BASE64 }}" | base64 --decode > profile.mobileprovision
+          
+          # Extract profile info
+          security cms -D -i profile.mobileprovision > profile.plist
+          
+          echo "=== Profile Info ==="
+          /usr/libexec/PlistBuddy -c "Print :Name" profile.plist || echo "Name not found"
+          /usr/libexec/PlistBuddy -c "Print :TeamIdentifier:0" profile.plist || echo "Team ID not found"
+          /usr/libexec/PlistBuddy -c "Print :UUID" profile.plist || echo "UUID not found"
+          /usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" profile.plist || echo "App ID not found"
+          
+          # Check if profile matches bundle ID
+          APP_ID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" profile.plist 2>/dev/null || echo "")
+          if [[ "$APP_ID" == *"com.yousan"* ]]; then
+            echo "✅ Profile matches bundle ID com.yousan"
+          else
+            echo "❌ Profile does NOT match bundle ID com.yousan"
+            echo "Profile is for: $APP_ID"
+          fi
+          
+          # Cleanup
+          rm -f profile.mobileprovision profile.plist
+          
+      # Step 4: 簡単なXcodeプロジェクトでテスト
+      - name: Create Test Xcode Project
+        run: |
+          echo "=== Creating Test Project ==="
+          mkdir -p TestProject
+          cd TestProject
+          
+          # Create a minimal Info.plist
+          cat > Info.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleIdentifier</key>
+              <string>com.yousan</string>
+              <key>CFBundleName</key>
+              <string>TestApp</string>
+              <key>CFBundleVersion</key>
+              <string>1.0</string>
+          </dict>
+          </plist>
+          EOF
+          
+          # Create test source file
+          cat > main.m << EOF
+          #import <UIKit/UIKit.h>
+          int main(int argc, char * argv[]) {
+              @autoreleasepool {
+                  return 0;
+              }
+          }
+          EOF
+          
+      # Step 5: テストビルド
+      - name: Test Build with Signing
+        if: ${{ secrets.IOS_DEVELOPMENT_TEAM != '' }}
+        run: |
+          cd TestProject
+          
+          echo "=== Test Build ==="
+          # Try to compile with signing
+          xcrun clang -target arm64-apple-ios12.0 \
+            -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+            -framework UIKit \
+            main.m -o TestApp || echo "Compilation failed"
+            
+          echo "=== Available Signing Identities ==="
+          security find-identity -v -p codesigning
+          
+          echo "Test completed. Check above output for issues."
