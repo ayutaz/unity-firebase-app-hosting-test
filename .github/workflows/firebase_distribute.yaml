@@ -16,6 +16,10 @@ jobs:
   build-android:
     name: Build and Deploy Android
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: android-build-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
@@ -93,6 +97,10 @@ jobs:
   build-webgl:
     name: Build and Deploy WebGL
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: webgl-build-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
@@ -222,6 +230,10 @@ jobs:
   build-ios:
     name: Build and Deploy iOS
     runs-on: macos-latest
+    timeout-minutes: 60
+    concurrency:
+      group: ios-build-${{ github.ref }}
+      cancel-in-progress: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
@@ -235,6 +247,7 @@ jobs:
             Library-iOS-
       - name: Build iOS Project (Xcode)
         id: unity_ios_build
+        timeout-minutes: 30
         uses: game-ci/unity-builder@v4.3.0
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
@@ -245,6 +258,7 @@ jobs:
           buildsPath: build
           buildName: iOS
           unityVersion: ${{ env.UNITY_VERSION }}
+          allowDirtyBuild: true
           
       # Unity Builderの結果を確認
       - name: Check Unity Build Result
