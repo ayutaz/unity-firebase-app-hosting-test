@@ -24,6 +24,7 @@ jobs:
           echo "IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD != '' && 'SET' || 'NOT SET' }}"
           echo "IOS_MOBILEPROVISION_BASE64: ${{ secrets.IOS_MOBILEPROVISION_BASE64 != '' && 'SET' || 'NOT SET' }}"
           echo "IOS_DEVELOPMENT_TEAM: ${{ secrets.IOS_DEVELOPMENT_TEAM != '' && 'SET' || 'NOT SET' }}"
+          echo "APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' && 'SET' || 'NOT SET' }}"
           echo "IOS_CODE_SIGN_IDENTITY: ${{ secrets.IOS_CODE_SIGN_IDENTITY != '' && 'SET' || 'NOT SET' }}"
           echo "FIREBASE_IOS_APP_ID: ${{ secrets.FIREBASE_IOS_APP_ID != '' && 'SET' || 'NOT SET' }}"
           

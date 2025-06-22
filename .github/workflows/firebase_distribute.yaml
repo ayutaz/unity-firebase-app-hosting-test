@@ -424,6 +424,17 @@ jobs:
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> $GITHUB_ENV
           echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> $GITHUB_ENV
 
+      # Team IDを取得
+      - name: Setup Team ID
+        run: |
+          TEAM_ID="${{ secrets.IOS_DEVELOPMENT_TEAM || secrets.APPLE_TEAM_ID }}"
+          if [ -z "$TEAM_ID" ]; then
+            echo "::error::Neither IOS_DEVELOPMENT_TEAM nor APPLE_TEAM_ID is set"
+            exit 1
+          fi
+          echo "TEAM_ID=$TEAM_ID" >> $GITHUB_ENV
+          echo "Using Team ID: $TEAM_ID"
+
       - name: Install Provisioning Profile
         env:
           MOBILEPROVISION_BASE64: ${{ secrets.IOS_MOBILEPROVISION_BASE64 }}
@@ -569,10 +580,11 @@ jobs:
               sed -i.bak 's/CODE_SIGN_IDENTITY = ".*"/CODE_SIGN_IDENTITY = "iPhone Distribution"/g' "$PBXPROJ"
             fi
             
-            # DEVELOPMENT_TEAMを設定
-            if [ -n "${{ secrets.IOS_DEVELOPMENT_TEAM }}" ]; then
-              sed -i.bak "s/DEVELOPMENT_TEAM = \".*\"/DEVELOPMENT_TEAM = \"${{ secrets.IOS_DEVELOPMENT_TEAM }}\"/g" "$PBXPROJ"
-              sed -i.bak "s/DEVELOPMENT_TEAM = \"\"/DEVELOPMENT_TEAM = \"${{ secrets.IOS_DEVELOPMENT_TEAM }}\"/g" "$PBXPROJ"
+            # DEVELOPMENT_TEAMを設定 (IOS_DEVELOPMENT_TEAM または APPLE_TEAM_ID)
+            TEAM_ID="${{ secrets.IOS_DEVELOPMENT_TEAM || secrets.APPLE_TEAM_ID }}"
+            if [ -n "$TEAM_ID" ]; then
+              sed -i.bak "s/DEVELOPMENT_TEAM = \".*\"/DEVELOPMENT_TEAM = \"$TEAM_ID\"/g" "$PBXPROJ"
+              sed -i.bak "s/DEVELOPMENT_TEAM = \"\"/DEVELOPMENT_TEAM = \"$TEAM_ID\"/g" "$PBXPROJ"
             fi
             
             # CODE_SIGN_STYLEをAutomaticに設定
@@ -590,7 +602,7 @@ jobs:
       # Xcodeプロジェクトをビルド
       - name: Build iOS App
         env:
-          DEVELOPMENT_TEAM: ${{ secrets.IOS_DEVELOPMENT_TEAM }}
+          DEVELOPMENT_TEAM: ${{ env.TEAM_ID }}
           CODE_SIGN_IDENTITY: ${{ secrets.IOS_CODE_SIGN_IDENTITY }}
         run: |
           # エラー出力を詳細に
