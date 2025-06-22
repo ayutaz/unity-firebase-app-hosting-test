@@ -18,7 +18,8 @@
       "Bash(rm:*)",
       "Bash(git stash:*)",
       "Bash(yamllint:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(curl:*)"
     ],
     "deny": []
   }

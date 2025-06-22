@@ -324,11 +324,12 @@ jobs:
             MISSING_SECRETS="${MISSING_SECRETS} IOS_MOBILEPROVISION_BASE64"
           fi
           
-          if [ -z "${{ secrets.IOS_DEVELOPMENT_TEAM }}" ]; then
-            echo "::error::IOS_DEVELOPMENT_TEAM is not set"
-            echo "This secret is REQUIRED for iOS builds. Please set it in GitHub repository settings."
+          # Check for either IOS_DEVELOPMENT_TEAM or APPLE_TEAM_ID
+          if [ -z "${{ secrets.IOS_DEVELOPMENT_TEAM }}" ] && [ -z "${{ secrets.APPLE_TEAM_ID }}" ]; then
+            echo "::error::Neither IOS_DEVELOPMENT_TEAM nor APPLE_TEAM_ID is set"
+            echo "This secret is REQUIRED for iOS builds. Please set either IOS_DEVELOPMENT_TEAM or APPLE_TEAM_ID in GitHub repository settings."
             echo "You can find your Team ID at: https://developer.apple.com/account/#/membership/"
-            MISSING_SECRETS="${MISSING_SECRETS} IOS_DEVELOPMENT_TEAM"
+            MISSING_SECRETS="${MISSING_SECRETS} IOS_DEVELOPMENT_TEAM/APPLE_TEAM_ID"
           fi
           
           if [ -z "${{ secrets.FIREBASE_IOS_APP_ID }}" ]; then
