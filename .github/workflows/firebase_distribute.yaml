@@ -424,20 +424,31 @@ jobs:
           echo "Using CODE_SIGN_IDENTITY: $CODE_SIGN_IDENTITY"
           echo "Using PROFILE_UUID: ${{ env.PROFILE_UUID }}"
           
+          # まず自動署名で試す
+          echo "Trying automatic signing first..."
           xcodebuild -project "$XCODE_PROJECT" \
             -scheme Unity-iPhone \
             -sdk iphoneos \
             -configuration Release \
             -archivePath "${{ github.workspace }}/build/iOS/Unity-iPhone.xcarchive" \
             clean archive \
-            CODE_SIGN_IDENTITY="$CODE_SIGN_IDENTITY" \
-            PROVISIONING_PROFILE_SPECIFIER="${{ env.PROFILE_UUID }}" \
             DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
-            CODE_SIGN_STYLE=Manual \
-            -allowProvisioningUpdates \
-            -verbose || {
-              echo "::error::Xcode archive failed with manual signing"
-              echo "Checking xcodebuild error details..."
+            CODE_SIGN_STYLE=Automatic \
+            -allowProvisioningUpdates || {
+              echo "::warning::Automatic signing failed, trying manual signing..."
+              xcodebuild -project "$XCODE_PROJECT" \
+                -scheme Unity-iPhone \
+                -sdk iphoneos \
+                -configuration Release \
+                -archivePath "${{ github.workspace }}/build/iOS/Unity-iPhone.xcarchive" \
+                clean archive \
+                CODE_SIGN_IDENTITY="$CODE_SIGN_IDENTITY" \
+                PROVISIONING_PROFILE_SPECIFIER="${{ env.PROFILE_UUID }}" \
+                DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
+                CODE_SIGN_STYLE=Manual \
+                -allowProvisioningUpdates || {
+                  echo "::error::Both automatic and manual signing failed"
+                  echo "Checking xcodebuild error details..."
               
               # シミュレータ向けビルドを試す（証明書不要）
               echo "Trying simulator build without code signing..."
@@ -453,13 +464,14 @@ jobs:
                   echo "Listing project settings..."
                   xcodebuild -project "$XCODE_PROJECT" -showBuildSettings | grep -E "(PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN)"
                   exit 1
+                }
+                
+                echo "::warning::Only simulator build succeeded. Real device build requires proper signing configuration."
+                # シミュレータビルドは成功したが、実機ビルドのための設定が必要
+                ARCHIVE_PATH="${{ github.workspace }}/build/iOS/Unity-iPhone-Simulator.xcarchive"
+                echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> $GITHUB_ENV
+                echo "BUILD_TYPE=simulator" >> $GITHUB_ENV
               }
-              
-              echo "::warning::Only simulator build succeeded. Real device build requires proper signing configuration."
-              # シミュレータビルドは成功したが、実機ビルドのための設定が必要
-              ARCHIVE_PATH="${{ github.workspace }}/build/iOS/Unity-iPhone-Simulator.xcarchive"
-              echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> $GITHUB_ENV
-              echo "BUILD_TYPE=simulator" >> $GITHUB_ENV
             }
           
           # IPAファイルをエクスポート
