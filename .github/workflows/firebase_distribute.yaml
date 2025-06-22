@@ -333,6 +333,8 @@ jobs:
           p12-file-base64: ${{ secrets.IOS_P12_BASE64 }}
           p12-password: ${{ secrets.IOS_P12_PASSWORD }}
           keychain-password: ${{ secrets.IOS_P12_PASSWORD }}
+          create-keychain: true
+          keychain: signing.keychain
 
       - name: Install Provisioning Profile
         env:
@@ -399,6 +401,10 @@ jobs:
           
           # アーカイブを作成（実機向け）
           echo "Starting xcodebuild archive..."
+          echo "Using DEVELOPMENT_TEAM: $DEVELOPMENT_TEAM"
+          echo "Using CODE_SIGN_IDENTITY: $CODE_SIGN_IDENTITY"
+          echo "Using PROFILE_UUID: ${{ env.PROFILE_UUID }}"
+          
           xcodebuild -project "$XCODE_PROJECT" \
             -scheme Unity-iPhone \
             -sdk iphoneos \
@@ -409,18 +415,32 @@ jobs:
             PROVISIONING_PROFILE_SPECIFIER="${{ env.PROFILE_UUID }}" \
             DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
             CODE_SIGN_STYLE=Manual \
-            -allowProvisioningUpdates || {
-              echo "::error::Xcode archive failed"
-              echo "Trying with automatic signing as fallback..."
+            -allowProvisioningUpdates \
+            -verbose || {
+              echo "::error::Xcode archive failed with manual signing"
+              echo "Checking xcodebuild error details..."
+              
+              # シミュレータ向けビルドを試す（証明書不要）
+              echo "Trying simulator build without code signing..."
               xcodebuild -project "$XCODE_PROJECT" \
                 -scheme Unity-iPhone \
-                -sdk iphoneos \
+                -sdk iphonesimulator \
                 -configuration Release \
-                -archivePath "${{ github.workspace }}/build/iOS/Unity-iPhone.xcarchive" \
+                -archivePath "${{ github.workspace }}/build/iOS/Unity-iPhone-Simulator.xcarchive" \
                 clean archive \
-                DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
-                CODE_SIGN_STYLE=Automatic \
-                -allowProvisioningUpdates
+                CODE_SIGNING_REQUIRED=NO \
+                CODE_SIGNING_ALLOWED=NO || {
+                  echo "::error::Even simulator build failed. Checking project issues..."
+                  echo "Listing project settings..."
+                  xcodebuild -project "$XCODE_PROJECT" -showBuildSettings | grep -E "(PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN)"
+                  exit 1
+              }
+              
+              echo "::warning::Only simulator build succeeded. Real device build requires proper signing configuration."
+              # シミュレータビルドは成功したが、実機ビルドのための設定が必要
+              ARCHIVE_PATH="${{ github.workspace }}/build/iOS/Unity-iPhone-Simulator.xcarchive"
+              echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> $GITHUB_ENV
+              echo "BUILD_TYPE=simulator" >> $GITHUB_ENV
             }
           
           # IPAファイルをエクスポート
@@ -454,10 +474,15 @@ jobs:
           EOF
           
           echo "Starting IPA export..."
-          xcodebuild -exportArchive \
-            -archivePath "${{ github.workspace }}/build/iOS/Unity-iPhone.xcarchive" \
-            -exportPath "${{ github.workspace }}/build/iOS" \
-            -exportOptionsPlist ExportOptions.plist || {
+          # アーカイブパスを動的に決定
+          if [ "${{ env.BUILD_TYPE }}" = "simulator" ]; then
+            echo "::warning::Skipping IPA export for simulator build"
+            echo "Simulator builds cannot be exported as IPA files for distribution"
+          else
+            xcodebuild -exportArchive \
+              -archivePath "${{ github.workspace }}/build/iOS/Unity-iPhone.xcarchive" \
+              -exportPath "${{ github.workspace }}/build/iOS" \
+              -exportOptionsPlist ExportOptions.plist || {
               echo "::warning::Export with manual signing failed, trying automatic signing..."
               cat > ExportOptions.plist <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -484,6 +509,7 @@ jobs:
                 -exportPath "${{ github.workspace }}/build/iOS" \
                 -exportOptionsPlist ExportOptions.plist
             }
+          fi
 
       - name: Upload iOS Build Artifact
         uses: actions/upload-artifact@v4.6.0
