@@ -293,7 +293,7 @@ jobs:
       - name: Generate ExportOptions.plist from Secrets
         env:
           APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
-          IOS_BUNDLE_ID_SECRET: ${{ secrets.IOS_BUNDLE_ID }}
+          IOS_BUNDLE_ID: com.yousan
           IOS_PROVISIONING_PROFILE_NAME_SECRET: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
         run: |
           echo "Generating ExportOptions.plist..."
@@ -309,7 +309,7 @@ jobs:
               <string>${APPLE_TEAM_ID_SECRET}</string>
               <key>provisioningProfiles</key>
               <dict>
-                  <key>${IOS_BUNDLE_ID_SECRET}</key>
+                  <key>${IOS_BUNDLE_ID}</key>
                   <string>${IOS_PROVISIONING_PROFILE_NAME_SECRET}</string>
               </dict>
               <key>signingCertificate</key>
@@ -329,9 +329,11 @@ jobs:
           echo "EXPORT_OPTIONS_PLIST_PATH=${PLIST_PATH}" >> $GITHUB_ENV
       - name: Build and Export .ipa
         id: build_ipa
+        if: steps.unity_ios_build.outcome == 'success'
         continue-on-error: true
         env:
             APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+            IOS_BUNDLE_ID: com.yousan
             IOS_PROVISIONING_PROFILE_NAME_SECRET: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
             IOS_CODE_SIGN_IDENTITY: "Apple Distribution"
         run: |
