@@ -267,6 +267,21 @@ jobs:
           buildName: iOS
           unityVersion: ${{ env.UNITY_VERSION }}
 
+      # Unity Builderの出力を確認
+      - name: Check Unity Builder Output
+        run: |
+          echo "=== Unity Builder Output Structure ==="
+          if [ -d "build/iOS" ]; then
+            echo "iOS build directory exists"
+            find build/iOS -name "*.xcodeproj" -o -name "*.xcworkspace" | head -10
+            echo ""
+            echo "=== Directory Structure ==="
+            ls -la build/iOS/ | head -20
+          else
+            echo "::error::iOS build directory not found"
+            exit 1
+          fi
+          
       # ビルド成果物をアーティファクトとして保存
       - name: Upload iOS Xcode Project
         uses: actions/upload-artifact@v4.6.0
@@ -292,6 +307,20 @@ jobs:
         with:
           name: ios-xcode-project
           path: build/iOS
+          
+      # ダウンロードしたファイルを確認
+      - name: Verify Downloaded Files
+        run: |
+          echo "=== Downloaded Files ==="
+          if [ -d "build/iOS" ]; then
+            echo "iOS directory exists after download"
+            find build/iOS -type f -name "*.xcodeproj" -o -name "*.xcworkspace" | head -10
+            echo ""
+            echo "Total files: $(find build/iOS -type f | wc -l)"
+          else
+            echo "::error::Downloaded iOS directory not found"
+            exit 1
+          fi
 
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -336,6 +365,20 @@ jobs:
           echo "=== Development Team: ${{ secrets.IOS_DEVELOPMENT_TEAM }} ==="
           echo "=== Code Sign Identity: ${{ secrets.IOS_CODE_SIGN_IDENTITY }} ==="
 
+      # ビルド前の環境確認
+      - name: Pre-build Environment Check
+        run: |
+          echo "=== Environment Variables ==="
+          echo "DEVELOPMENT_TEAM is set: ${{ secrets.IOS_DEVELOPMENT_TEAM != '' }}"
+          echo "CODE_SIGN_IDENTITY is set: ${{ secrets.IOS_CODE_SIGN_IDENTITY != '' }}"
+          echo "PROFILE_UUID: ${{ env.PROFILE_UUID }}"
+          echo ""
+          echo "=== Xcode Version ==="
+          xcodebuild -version
+          echo ""
+          echo "=== Available SDKs ==="
+          xcodebuild -showsdks
+          
       # Xcodeプロジェクトをビルド
       - name: Build iOS App
         env:
