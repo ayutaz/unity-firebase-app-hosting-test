@@ -318,6 +318,17 @@ jobs:
             IOS_PROVISIONING_PROFILE_NAME_SECRET: ${{ secrets.IOS_PROVISIONING_PROFILE_NAME }}
             IOS_CODE_SIGN_IDENTITY: "Apple Distribution"
         run: |
+          # デバッグ情報を表示
+          echo "=== Debug Information ==="
+          echo "APPLE_TEAM_ID: ${APPLE_TEAM_ID}"
+          echo "IOS_PROVISIONING_PROFILE_NAME_SECRET: ${IOS_PROVISIONING_PROFILE_NAME_SECRET}"
+          echo "IOS_CODE_SIGN_IDENTITY: ${IOS_CODE_SIGN_IDENTITY}"
+          echo "PROVISIONING_UUID from env: ${{ env.PROVISIONING_UUID }}"
+          
+          # ビルドディレクトリの内容を確認
+          echo "=== Checking build directory structure ==="
+          ls -la "${{ github.workspace }}/build/iOS/" || echo "iOS build directory not found"
+          
           XCODE_PROJECT_PATH="${{ github.workspace }}/build/iOS/iOS/Unity-iPhone.xcodeproj"
           ARCHIVE_PATH="${{ github.workspace }}/build/iOS/archive.xcarchive"
           EXPORT_PATH="${{ github.workspace }}/build/iOS/ipa"
@@ -325,8 +336,18 @@ jobs:
           echo "Archiving Xcode project from: ${XCODE_PROJECT_PATH}"
           if [ ! -d "${XCODE_PROJECT_PATH}" ]; then
             echo "::error::Xcode project not found at specified path: ${XCODE_PROJECT_PATH}"
+            echo "Checking parent directory:"
+            ls -la "${{ github.workspace }}/build/iOS/"
             exit 1
           fi
+          # 利用可能な署名証明書を確認
+          echo "=== Available signing certificates ==="
+          security find-identity -v -p codesigning
+          
+          # プロビジョニングプロファイルの確認
+          echo "=== Installed provisioning profiles ==="
+          ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/"
+          
           xcodebuild archive \
             -project "${XCODE_PROJECT_PATH}" \
             -scheme Unity-iPhone \
@@ -336,7 +357,8 @@ jobs:
             DEVELOPMENT_TEAM="${APPLE_TEAM_ID}" \
             PROVISIONING_PROFILE_SPECIFIER="${IOS_PROVISIONING_PROFILE_NAME_SECRET}" \
             CODE_SIGN_IDENTITY="${IOS_CODE_SIGN_IDENTITY}" \
-            PROVISIONING_PROFILE="${{ env.PROVISIONING_UUID }}"
+            PROVISIONING_PROFILE="${{ env.PROVISIONING_UUID }}" \
+            -verbose
           echo "Exporting .ipa using generated plist: ${{ env.EXPORT_OPTIONS_PLIST_PATH }}"
           xcodebuild -exportArchive \
             -archivePath "${ARCHIVE_PATH}" \
