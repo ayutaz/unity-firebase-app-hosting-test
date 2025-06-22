@@ -300,10 +300,13 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_SKIP_ACTIVATION: true  # ライセンス認証をスキップ
+          ACTIONS_STEP_DEBUG: true  # デバッグログを有効化
+          ACTIONS_RUNNER_DEBUG: true
         with:
           targetPlatform: iOS
           buildsPath: build
           unityVersion: ${{ env.UNITY_VERSION }}
+          customParameters: -logFile -
           
       # Unity Builderが失敗した場合、別の設定で再試行
       - name: Build iOS Project (Xcode) - Attempt 2
@@ -323,6 +326,29 @@ jobs:
           unityVersion: ${{ env.UNITY_VERSION }}
           versioning: None
           allowDirtyBuild: true
+          
+      # Unity Builderが両方失敗した場合の緊急対応
+      - name: Fallback - Create Minimal iOS Structure
+        if: steps.unity_ios_build.outcome != 'success' && steps.unity_ios_build_retry.outcome != 'success'
+        run: |
+          echo "::warning::Unity Builder failed twice. Creating minimal structure for testing."
+          mkdir -p "${{ github.workspace }}/build/iOS"
+          
+          # 最小限のプレースホルダーを作成
+          cat > "${{ github.workspace }}/build/iOS/README.txt" << 'EOF'
+          Unity Builder iOS build failed.
+          Possible causes:
+          1. Unity License activation issues on macOS
+          2. Unity 6000.0.43f1 compatibility with Unity Builder
+          3. macOS runner resource limitations
+          
+          Next steps:
+          1. Check Unity license is valid for macOS
+          2. Try using Unity Hub installation
+          3. Consider using Unity command line directly
+          EOF
+          
+          echo "::error::Unity iOS build failed. Check artifacts for logs."
           
       # Unity Builderの結果を確認
       - name: Check Unity Build Result
