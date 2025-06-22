@@ -397,6 +397,8 @@ jobs:
           
       # 証明書とプロファイルの確認
       - name: Verify Code Signing Setup
+        env:
+          MOBILEPROVISION_BASE64: ${{ secrets.IOS_MOBILEPROVISION_BASE64 }}
         run: |
           echo "=== Available Certificates ==="
           security find-identity -v -p codesigning || echo "No codesigning certificates found"
@@ -413,7 +415,24 @@ jobs:
           # プロビジョニングプロファイルの内容を確認
           if [ -f "$HOME/Library/MobileDevice/Provisioning Profiles/profile.mobileprovision" ]; then
             echo "=== Provisioning Profile Info ==="
-            security cms -D -i "$HOME/Library/MobileDevice/Provisioning Profiles/profile.mobileprovision" | grep -E "(TeamIdentifier|application-identifier|Name)" | head -10
+            security cms -D -i "$HOME/Library/MobileDevice/Provisioning Profiles/profile.mobileprovision" > profile_info.plist
+            
+            echo "Profile Name: $(/usr/libexec/PlistBuddy -c 'Print :Name' profile_info.plist 2>/dev/null || echo 'Not found')"
+            echo "Team ID: $(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' profile_info.plist 2>/dev/null || echo 'Not found')"
+            echo "Bundle ID: $(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' profile_info.plist 2>/dev/null || echo 'Not found')"
+            echo "Profile Type: $(/usr/libexec/PlistBuddy -c 'Print :ProvisionsAllDevices' profile_info.plist 2>/dev/null && echo 'Ad Hoc/Enterprise' || echo 'Development/App Store')"
+            
+            # Bundle IDのチェック
+            PROFILE_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' profile_info.plist 2>/dev/null || echo '')
+            if [[ "$PROFILE_BUNDLE_ID" == *"com.yousan"* ]]; then
+              echo "✅ Profile bundle ID matches com.yousan"
+            else
+              echo "❌ Profile bundle ID does NOT match com.yousan"
+              echo "Profile is for: $PROFILE_BUNDLE_ID"
+              echo "::warning::Bundle ID mismatch - this will cause code signing to fail"
+            fi
+            
+            rm -f profile_info.plist
           fi
 
       # ビルド前の環境確認
@@ -476,6 +495,8 @@ jobs:
           DEVELOPMENT_TEAM: ${{ secrets.IOS_DEVELOPMENT_TEAM }}
           CODE_SIGN_IDENTITY: ${{ secrets.IOS_CODE_SIGN_IDENTITY }}
         run: |
+          # エラー出力を詳細に
+          set -e
           XCODE_PROJECT=$(find build/iOS -name "*.xcodeproj" -type d | head -n 1)
           if [ -z "$XCODE_PROJECT" ]; then
             echo "::error::Xcode project not found"
@@ -494,8 +515,16 @@ jobs:
           echo "Using CODE_SIGN_IDENTITY: $CODE_SIGN_IDENTITY"
           echo "Using PROFILE_UUID: ${{ env.PROFILE_UUID }}"
           
+          # まずプロジェクト設定を確認
+          echo "=== Checking Xcode Project Settings ==="
+          xcodebuild -project "$XCODE_PROJECT" -showBuildSettings -configuration Release | grep -E "(PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN)" | head -20
+          
           # 手動署名を優先して試す
           echo "Trying manual signing with provisioning profile..."
+          echo "Using CODE_SIGN_IDENTITY: ${{ secrets.IOS_CODE_SIGN_IDENTITY }}"
+          echo "Using PROFILE_UUID: ${{ env.PROFILE_UUID }}"
+          echo "Using DEVELOPMENT_TEAM: $DEVELOPMENT_TEAM"
+          
           xcodebuild -project "$XCODE_PROJECT" \
             -scheme Unity-iPhone \
             -sdk iphoneos \
@@ -506,7 +535,12 @@ jobs:
             PROVISIONING_PROFILE_SPECIFIER="${{ env.PROFILE_UUID }}" \
             DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
             CODE_SIGN_STYLE=Manual \
-            PRODUCT_BUNDLE_IDENTIFIER="com.yousan" || {
+            PRODUCT_BUNDLE_IDENTIFIER="com.yousan" \
+            -verbose 2>&1 | tee xcode_build.log || {
+              echo "::error::Manual signing failed"
+              echo "=== Last 50 lines of build log ==="
+              tail -50 xcode_build.log | grep -E "(error:|warning:|CODE_SIGN|PROVISION|No account|No signing|certificate)"
+              echo ""
               echo "::warning::Manual signing failed, trying automatic signing..."
               xcodebuild -project "$XCODE_PROJECT" \
                 -scheme Unity-iPhone \
