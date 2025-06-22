@@ -651,7 +651,9 @@ jobs:
           # 自動署名を試す
           echo "Trying automatic signing..."
           echo "Using DEVELOPMENT_TEAM: $TEAM_ID"
+          echo "Project: $XCODE_PROJECT"
           
+          # より詳細なエラー情報を取得
           xcodebuild -project "$XCODE_PROJECT" \
             -scheme Unity-iPhone \
             -sdk iphoneos \
@@ -662,8 +664,12 @@ jobs:
             PRODUCT_BUNDLE_IDENTIFIER="com.yousan" \
             CODE_SIGN_STYLE="Automatic" \
             -allowProvisioningUpdates \
-            -allowProvisioningDeviceRegistration || {
+            -allowProvisioningDeviceRegistration \
+            -verbose 2>&1 | tee xcodebuild.log || {
               echo "::error::Automatic signing failed"
+              echo "=== Xcodebuild Error Details ==="
+              tail -50 xcodebuild.log | grep -E "(error|Error|ERROR|failed|Failed|FAILED)" || true
+              echo "=== End Error Details ==="
               echo "Trying manual signing as fallback..."
               
               # 手動署名を試す
@@ -680,8 +686,11 @@ jobs:
                   PROVISIONING_PROFILE_SPECIFIER="${{ env.PROFILE_UUID }}" \
                   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
                   CODE_SIGN_STYLE="Manual" \
-                  PRODUCT_BUNDLE_IDENTIFIER="com.yousan" || {
+                  PRODUCT_BUNDLE_IDENTIFIER="com.yousan" 2>&1 | tee xcodebuild-manual.log || {
                     echo "::error::Both automatic and manual signing failed"
+                  echo "=== Manual Signing Error Details ==="
+                  tail -50 xcodebuild-manual.log | grep -E "(error|Error|ERROR|failed|Failed|FAILED)" || true
+                  echo "=== End Manual Error Details ==="
                   echo "Checking xcodebuild error details..."
               
               # シミュレータ向けビルドを試す（証明書不要）
@@ -693,8 +702,11 @@ jobs:
                 -archivePath "${{ github.workspace }}/build/iOS/Unity-iPhone-Simulator.xcarchive" \
                 clean archive \
                 CODE_SIGNING_REQUIRED=NO \
-                CODE_SIGNING_ALLOWED=NO || {
+                CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild-simulator.log || {
                   echo "::error::Even simulator build failed. Checking project issues..."
+                  echo "=== Simulator Build Error Details ==="
+                  tail -50 xcodebuild-simulator.log | grep -E "(error|Error|ERROR|failed|Failed|FAILED)" || true
+                  echo "=== End Simulator Error Details ==="
                   echo "Listing project settings..."
                   xcodebuild -project "$XCODE_PROJECT" -showBuildSettings | grep -E "(PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN)"
                   exit 1
