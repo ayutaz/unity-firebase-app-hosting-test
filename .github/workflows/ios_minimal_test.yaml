@@ -16,8 +16,8 @@ jobs:
       - name: Check Environment
         run: |
           echo "=== Environment ==="
-          echo "APPLE_TEAM_ID exists: ${{ secrets.APPLE_TEAM_ID != '' }}"
-          echo "IOS_DEVELOPMENT_TEAM exists: ${{ secrets.IOS_DEVELOPMENT_TEAM != '' }}"
+          echo "APPLE_TEAM_ID exists: ${{ secrets.APPLE_TEAM_ID != '' && 'true' || 'false' }}"
+          echo "IOS_DEVELOPMENT_TEAM exists: ${{ secrets.IOS_DEVELOPMENT_TEAM != '' && 'true' || 'false' }}"
           echo "macOS version: $(sw_vers -productVersion)"
           echo "Xcode version: $(xcodebuild -version | head -1)"
           
