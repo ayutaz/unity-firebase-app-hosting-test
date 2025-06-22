@@ -1,0 +1,69 @@
+name: iOS Build Test (No Signing)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ fix/ios-build-workflow ]
+
+env:
+  UNITY_VERSION: '6000.0.43f1'
+
+jobs:
+  build-ios-simple:
+    name: Build iOS (Simple)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4.2.2
+
+      - name: Setup Unity
+        uses: game-ci/unity-builder@v4.3.0
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        with:
+          targetPlatform: iOS
+          buildsPath: build
+          buildName: iOS
+          unityVersion: ${{ env.UNITY_VERSION }}
+
+      - name: Check Build Output
+        run: |
+          echo "=== Build Output ===" 
+          ls -la build/iOS/
+          find build/iOS -name "*.xcodeproj" | head -5
+          
+      - name: Build with Xcode (No Signing)
+        run: |
+          XCODE_PROJECT=$(find build/iOS -name "*.xcodeproj" -type d | head -n 1)
+          echo "Building project: $XCODE_PROJECT"
+          
+          # ビルドのみ（署名なし）
+          xcodebuild -project "$XCODE_PROJECT" \
+            -scheme Unity-iPhone \
+            -configuration Release \
+            build \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            -destination 'generic/platform=iOS' || {
+              echo "Build failed, trying simulator..."
+              xcodebuild -project "$XCODE_PROJECT" \
+                -scheme Unity-iPhone \
+                -sdk iphonesimulator \
+                -configuration Release \
+                build \
+                CODE_SIGNING_REQUIRED=NO \
+                CODE_SIGNING_ALLOWED=NO
+            }
+            
+      - name: Upload Build Logs
+        if: always()
+        uses: actions/upload-artifact@v4.6.0
+        with:
+          name: ios-build-logs
+          path: |
+            build/iOS/*.log
+            build/iOS/*.xcactivitylog
