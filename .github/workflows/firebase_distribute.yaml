@@ -234,6 +234,7 @@ jobs:
           restore-keys: |
             Library-iOS-
       - name: Build iOS Project (Xcode)
+        id: unity_ios_build
         uses: game-ci/unity-builder@v4.3.0
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
@@ -244,6 +245,18 @@ jobs:
           buildsPath: build
           buildName: iOS
           unityVersion: ${{ env.UNITY_VERSION }}
+          
+      # Unity Builderの結果を確認
+      - name: Check Unity Build Result
+        if: always()
+        run: |
+          echo "=== Unity iOS Build Result ==="
+          echo "Build outcome: ${{ steps.unity_ios_build.outcome }}"
+          echo "Checking build output directory..."
+          ls -la "${{ github.workspace }}/build/" || echo "Build directory not found"
+          ls -la "${{ github.workspace }}/build/iOS/" || echo "iOS build directory not found"
+          echo "=== Searching for Xcode projects ==="
+          find "${{ github.workspace }}/build" -name "*.xcodeproj" -type d || echo "No Xcode projects found"
 
       - name: Import Code Signing Certificates (.p12 only)
         # このステップでは .p12 (証明書+秘密鍵) のインポートのみを期待する
@@ -251,6 +264,7 @@ jobs:
         with:
           p12-file-base64: ${{ secrets.IOS_P12_BASE64 }}
           p12-password: ${{ secrets.IOS_P12_PASSWORD }}
+          keychain-password: ${{ secrets.IOS_P12_PASSWORD }}
 
       - name: Install Provisioning Profile from Secret
         env:
