@@ -2,7 +2,14 @@ name: Unity Build and Deploy
 
 on:
   push:
-    branches: [ main, fix/ios-build-workflow ]
+    branches: 
+      - main
+      - 'fix/**'
+      - 'feat/**'
+      - 'feature/**'
+      - 'hotfix/**'
+      - 'release/**'
+      - 'develop'
   pull_request:
     branches: [ main ]
   workflow_dispatch:
