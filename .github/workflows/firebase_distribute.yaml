@@ -380,6 +380,25 @@ jobs:
           echo ""
           echo "=== Available SDKs ==="
           xcodebuild -showsdks
+          echo ""
+          echo "=== Xcode Project Location ==="
+          XCODE_PROJECT=$(find build/iOS -name "*.xcodeproj" -type d | head -n 1)
+          echo "Project: $XCODE_PROJECT"
+          
+          # Unity-iPhone.xcodeprojのpbxprojファイルを修正
+          PBXPROJ="$XCODE_PROJECT/project.pbxproj"
+          if [ -f "$PBXPROJ" ]; then
+            echo "Updating project.pbxproj for proper code signing..."
+            # CODE_SIGN_IDENTITYを明示的に設定
+            sed -i.bak 's/CODE_SIGN_IDENTITY = ""/CODE_SIGN_IDENTITY = "iPhone Distribution"/g' "$PBXPROJ"
+            # DEVELOPMENT_TEAMを設定
+            if [ -n "${{ secrets.IOS_DEVELOPMENT_TEAM }}" ]; then
+              sed -i.bak "s/DEVELOPMENT_TEAM = \"\"/DEVELOPMENT_TEAM = \"${{ secrets.IOS_DEVELOPMENT_TEAM }}\"/g" "$PBXPROJ"
+            fi
+            # バックアップファイルを削除
+            rm -f "$PBXPROJ.bak"
+            echo "Project file updated."
+          fi
           
       # Xcodeプロジェクトをビルド
       - name: Build iOS App
