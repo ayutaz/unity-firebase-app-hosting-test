@@ -629,6 +629,10 @@ jobs:
           echo "=== Checking Xcode Project Settings ==="
           xcodebuild -project "$XCODE_PROJECT" -showBuildSettings -configuration Release | grep -E "(PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN)" | head -20
           
+          # ビルドターゲットの確認
+          echo "=== Available build targets ==="
+          xcodebuild -project "$XCODE_PROJECT" -list
+          
           # キーチェーンをアンロック
           if [ -n "${{ env.KEYCHAIN_PATH }}" ]; then
             security unlock-keychain -p "${{ env.KEYCHAIN_PASSWORD }}" "${{ env.KEYCHAIN_PATH }}"
