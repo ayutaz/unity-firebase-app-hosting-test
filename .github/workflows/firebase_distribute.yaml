@@ -289,24 +289,44 @@ jobs:
             echo "::error::Failed to create license file"
           fi
       
-      # 最初にシンプルな設定でUnity Builderを試す
-      - name: Build iOS Project (Xcode) - Attempt 1
+      # Unity Builderの代わりに直接Unityを使用する試み
+      - name: Install Unity Hub
+        run: |
+          echo "=== Installing Unity Hub ==="
+          # Unity Hub DMGをダウンロード
+          curl -L -o UnityHub.dmg "https://public-cdn.cloud.unity3d.com/hub/prod/UnityHub.dmg"
+          
+          # DMGをマウント
+          hdiutil attach UnityHub.dmg
+          
+          # Unity Hubをインストール
+          sudo cp -R "/Volumes/Unity Hub/Unity Hub.app" /Applications/
+          
+          # DMGをアンマウント
+          hdiutil detach "/Volumes/Unity Hub"
+          
+          # Unity Hubの存在確認
+          if [ -d "/Applications/Unity Hub.app" ]; then
+            echo "Unity Hub installed successfully"
+          else
+            echo "::error::Unity Hub installation failed"
+            exit 1
+          fi
+      
+      # Unity Builderを最小限の設定で実行
+      - name: Build iOS Project - Minimal Config
         id: unity_ios_build
-        timeout-minutes: 20
+        timeout-minutes: 15
         continue-on-error: true
         uses: game-ci/unity-builder@v4.3.0
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-          UNITY_SKIP_ACTIVATION: true  # ライセンス認証をスキップ
-          ACTIONS_STEP_DEBUG: true  # デバッグログを有効化
-          ACTIONS_RUNNER_DEBUG: true
         with:
           targetPlatform: iOS
           buildsPath: build
           unityVersion: ${{ env.UNITY_VERSION }}
-          customParameters: -logFile -
           
       # Unity Builderが失敗した場合、別の設定で再試行
       - name: Build iOS Project (Xcode) - Attempt 2
