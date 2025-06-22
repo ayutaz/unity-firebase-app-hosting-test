@@ -404,6 +404,17 @@ jobs:
           echo "=== Imported certificates ==="
           security find-identity -v -p codesigning
           
+          # Get certificate name
+          CERT_NAME=$(security find-identity -v -p codesigning | grep -E "iPhone (Developer|Distribution)" | head -1 | sed -E 's/^[^"]*"([^"]*)".*$/\1/')
+          
+          if [ -z "$CERT_NAME" ]; then
+            echo "::warning::No iOS certificate found, using generic name"
+            CERT_NAME="iPhone Distribution"
+          fi
+          
+          echo "Certificate Name: $CERT_NAME"
+          echo "CERT_NAME=$CERT_NAME" >> $GITHUB_ENV
+          
           # Clean up
           rm -f certificate.p12
           
@@ -448,11 +459,37 @@ jobs:
         env:
           MOBILEPROVISION_BASE64: ${{ secrets.IOS_MOBILEPROVISION_BASE64 }}
         run: |
+          echo "=== Extracting provisioning profile UUID ==="
+          
+          # Decode profile
           echo "$MOBILEPROVISION_BASE64" | base64 --decode > temp.mobileprovision
-          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< $(security cms -D -i temp.mobileprovision))
+          
+          # Extract plist
+          security cms -D -i temp.mobileprovision > temp.plist
+          
+          # Get UUID using PlistBuddy
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" temp.plist 2>/dev/null)
+          
+          if [ -z "$PROFILE_UUID" ]; then
+            echo "::error::Failed to extract UUID with PlistBuddy, trying alternative method"
+            # Alternative method using grep
+            PROFILE_UUID=$(grep -A1 "<key>UUID</key>" temp.plist | grep "<string>" | sed 's/.*<string>\(.*\)<\/string>.*/\1/')
+          fi
+          
+          if [ -z "$PROFILE_UUID" ]; then
+            echo "::error::Failed to extract provisioning profile UUID"
+            cat temp.plist | grep -A5 -B5 "UUID"
+            exit 1
+          fi
+          
           echo "PROFILE_UUID=$PROFILE_UUID" >> $GITHUB_ENV
           echo "Profile UUID: $PROFILE_UUID"
-          rm temp.mobileprovision
+          
+          # Also get bundle ID for verification
+          PROFILE_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" temp.plist 2>/dev/null || echo "")
+          echo "Profile Bundle ID: $PROFILE_BUNDLE_ID"
+          
+          rm -f temp.mobileprovision temp.plist
           
       # 証明書とプロファイルの確認
       - name: Verify Code Signing Setup
@@ -613,7 +650,7 @@ jobs:
                   -configuration Release \
                   -archivePath "${{ github.workspace }}/build/iOS/Unity-iPhone.xcarchive" \
                   clean archive \
-                  CODE_SIGN_IDENTITY="iPhone Distribution" \
+                  CODE_SIGN_IDENTITY="${{ env.CERT_NAME }}" \
                   PROVISIONING_PROFILE_SPECIFIER="${{ env.PROFILE_UUID }}" \
                   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
                   CODE_SIGN_STYLE="Manual" \
