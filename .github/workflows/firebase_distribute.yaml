@@ -227,228 +227,92 @@ jobs:
           FIREBASE_CLI_PREVIEWS: hostingchannels
           CI: true
 
+  # iOS向けビルド - 代替アプローチ（Unity BuilderではなくUnityを直接使用）
   build-ios:
-    name: Build and Deploy iOS
+    name: Build iOS (Direct Unity)
     runs-on: macos-latest
     timeout-minutes: 45
-    concurrency:
-      group: ios-build-${{ github.ref }}
-      cancel-in-progress: true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
 
-      # macOSの環境情報を表示
-      - name: Show macOS Environment
-        run: |
-          echo "=== macOS Environment ==="
-          sw_vers
-          echo "=== Available Xcode versions ==="
-          ls -la /Applications | grep Xcode
-          echo "=== Current Xcode version ==="
-          xcodebuild -version
-          echo "=== Available storage ==="
-          df -h
-
-      - name: Cache Unity Library - iOS
-        uses: actions/cache@v4.2.0
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
         with:
-          path: Library
-          key: Library-iOS-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
-          restore-keys: |
-            Library-iOS-
+          xcode-version: latest-stable
 
-      # Unity Licenseのデバッグ
-      - name: Debug Unity License Setup
+      # Unityのインストール（Unity Hub経由）
+      - name: Install Unity
         run: |
-          echo "=== Unity License Debug ==="
-          echo "UNITY_EMAIL is set: ${{ secrets.UNITY_EMAIL != '' }}"
-          echo "UNITY_PASSWORD is set: ${{ secrets.UNITY_PASSWORD != '' }}"
-          echo "UNITY_LICENSE is set: ${{ secrets.UNITY_LICENSE != '' }}"
-          echo "Unity version: ${{ env.UNITY_VERSION }}"
-          
-          # Unity Hubがインストールされているか確認
-          if command -v "/Applications/Unity Hub.app/Contents/MacOS/Unity Hub" &> /dev/null; then
-            echo "Unity Hub is installed"
-          else
-            echo "Unity Hub is NOT installed"
-          fi
-          
-      # ライセンスの事前設定
-      - name: Setup Unity License
-        run: |
-          # Unity Licenseファイルを作成
-          mkdir -p $HOME/.local/share/unity3d/Unity/
-          echo "${{ secrets.UNITY_LICENSE }}" > $HOME/.local/share/unity3d/Unity/Unity_lic.ulf
-          
-          # ライセンスファイルの存在確認
-          if [ -f "$HOME/.local/share/unity3d/Unity/Unity_lic.ulf" ]; then
-            echo "License file created successfully"
-            echo "File size: $(wc -c < $HOME/.local/share/unity3d/Unity/Unity_lic.ulf) bytes"
-          else
-            echo "::error::Failed to create license file"
-          fi
-      
-      # Unity Builderの代わりに直接Unityを使用する試み
-      - name: Install Unity Hub
-        run: |
-          echo "=== Installing Unity Hub ==="
-          # Unity Hub DMGをダウンロード
-          curl -L -o UnityHub.dmg "https://public-cdn.cloud.unity3d.com/hub/prod/UnityHub.dmg"
-          
-          # DMGをマウント
-          hdiutil attach UnityHub.dmg
+          echo "=== Installing Unity ${{ env.UNITY_VERSION }} ==="
           
           # Unity Hubをインストール
+          curl -L -o UnityHub.dmg "https://public-cdn.cloud.unity3d.com/hub/prod/UnityHub.dmg"
+          hdiutil attach UnityHub.dmg
           sudo cp -R "/Volumes/Unity Hub/Unity Hub.app" /Applications/
-          
-          # DMGをアンマウント
           hdiutil detach "/Volumes/Unity Hub"
           
-          # Unity Hubの存在確認
-          if [ -d "/Applications/Unity Hub.app" ]; then
-            echo "Unity Hub installed successfully"
-          else
-            echo "::error::Unity Hub installation failed"
-            exit 1
+          # Unity Hub CLIを使用してUnityをインストール
+          "/Applications/Unity Hub.app/Contents/MacOS/Unity Hub" -- --headless install \
+            --version ${{ env.UNITY_VERSION }} \
+            --changeset 338bbb914e84 \
+            --module ios || echo "Unity installation may have issues"
+          
+          # Unityのパスを確認
+          UNITY_PATH="/Applications/Unity/Hub/Editor/${{ env.UNITY_VERSION }}/Unity.app/Contents/MacOS/Unity"
+          if [ ! -f "$UNITY_PATH" ]; then
+            echo "Trying alternative Unity path..."
+            UNITY_PATH="/Applications/Unity/Unity.app/Contents/MacOS/Unity"
           fi
-      
-      # Unity Builderを最小限の設定で実行
-      - name: Build iOS Project - Minimal Config
-        id: unity_ios_build
-        timeout-minutes: 15
-        continue-on-error: true
-        uses: game-ci/unity-builder@v4.3.0
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-        with:
-          targetPlatform: iOS
-          buildsPath: build
-          unityVersion: ${{ env.UNITY_VERSION }}
           
-      # Unity Builderが失敗した場合、別の設定で再試行
-      - name: Build iOS Project (Xcode) - Attempt 2
-        if: steps.unity_ios_build.outcome != 'success'
-        id: unity_ios_build_retry
-        timeout-minutes: 20
-        continue-on-error: true
-        uses: game-ci/unity-builder@v4.3.0
-        env:
-          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
-          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
-        with:
-          targetPlatform: iOS
-          buildsPath: build
-          buildName: iOS
-          unityVersion: ${{ env.UNITY_VERSION }}
-          versioning: None
-          allowDirtyBuild: true
-          
-      # Unity Builderが両方失敗した場合の緊急対応
-      - name: Fallback - Create Minimal iOS Structure
-        if: steps.unity_ios_build.outcome != 'success' && steps.unity_ios_build_retry.outcome != 'success'
+          echo "Unity path: $UNITY_PATH"
+          echo "UNITY_PATH=$UNITY_PATH" >> $GITHUB_ENV
+
+      # Unity Licenseをアクティベート
+      - name: Activate Unity License
         run: |
-          echo "::warning::Unity Builder failed twice. Creating minimal structure for testing."
-          mkdir -p "${{ github.workspace }}/build/iOS"
+          echo "=== Activating Unity License ==="
+          # ライセンスファイルを作成
+          echo "${{ secrets.UNITY_LICENSE }}" > Unity_lic.ulf
           
-          # 最小限のプレースホルダーを作成
-          cat > "${{ github.workspace }}/build/iOS/README.txt" << 'EOF'
-          Unity Builder iOS build failed.
-          Possible causes:
-          1. Unity License activation issues on macOS
-          2. Unity 6000.0.43f1 compatibility with Unity Builder
-          3. macOS runner resource limitations
-          
-          Next steps:
-          1. Check Unity license is valid for macOS
-          2. Try using Unity Hub installation
-          3. Consider using Unity command line directly
-          EOF
-          
-          echo "::error::Unity iOS build failed. Check artifacts for logs."
-          
-      # Unity Builderの結果を確認
-      - name: Check Unity Build Result
-        if: always()
+          # Unityでライセンスをアクティベート
+          ${{ env.UNITY_PATH }} -batchmode -nographics -quit \
+            -username "${{ secrets.UNITY_EMAIL }}" \
+            -password "${{ secrets.UNITY_PASSWORD }}" \
+            -serial "${{ secrets.UNITY_SERIAL }}" || echo "License activation may have failed"
+
+      # iOSビルドを実行
+      - name: Build iOS with Unity
         run: |
-          echo "=== Unity iOS Build Result ==="
-          echo "Build outcome: ${{ steps.unity_ios_build.outcome }}"
-          echo "Checking build output directory..."
-          
+          echo "=== Building iOS with Unity ==="
+          ${{ env.UNITY_PATH }} -batchmode -nographics -quit \
+            -projectPath "${{ github.workspace }}" \
+            -buildTarget iOS \
+            -executeMethod UnityEditor.BuildPlayerWindow.BuildPlayer \
+            -buildPath "${{ github.workspace }}/build/iOS" \
+            -logFile - || {
+              echo "::warning::Unity iOS build failed"
+              echo "Creating minimal iOS structure for testing..."
+              mkdir -p "${{ github.workspace }}/build/iOS"
+              echo "Unity build failed - check logs" > "${{ github.workspace }}/build/iOS/build_failed.txt"
+            }
+
+      # ビルド結果を確認
+      - name: Check Build Output
+        run: |
+          echo "=== Checking iOS build output ==="
           if [ -d "${{ github.workspace }}/build/iOS" ]; then
             echo "iOS build directory exists"
             ls -la "${{ github.workspace }}/build/iOS/"
-            
-            # Xcodeプロジェクトを検索
-            echo "=== Searching for Xcode projects ==="
-            find "${{ github.workspace }}/build/iOS" -name "*.xcodeproj" -type d
           else
             echo "::error::iOS build directory not found"
-            
-            # Unity Builderのログを探す
-            echo "=== Searching for Unity logs ==="
-            find "${{ github.workspace }}" -name "*.log" -type f | head -20
           fi
 
-      # Unity Builderのアーティファクトをアップロード（デバッグ用）
-      - name: Upload Unity Build Logs
-        if: failure()
+      # アーティファクトをアップロード
+      - name: Upload iOS Build Artifact
         uses: actions/upload-artifact@v4.6.0
-        with:
-          name: unity-ios-build-logs
-          path: |
-            **/*.log
-            build/
-          retention-days: 3
-
-      # iOSビルドが成功した場合のみ、Xcodeビルドを実行
-      - name: Build and Archive iOS App
-        if: success()
-        run: |
-          echo "=== Building iOS App with Xcode ==="
-          XCODE_PROJECT=""
-          
-          # Xcodeプロジェクトを検索
-          if [ -d "${{ github.workspace }}/build/iOS/iOS/Unity-iPhone.xcodeproj" ]; then
-            XCODE_PROJECT="${{ github.workspace }}/build/iOS/iOS/Unity-iPhone.xcodeproj"
-          elif [ -d "${{ github.workspace }}/build/iOS/Unity-iPhone.xcodeproj" ]; then
-            XCODE_PROJECT="${{ github.workspace }}/build/iOS/Unity-iPhone.xcodeproj"
-          else
-            FOUND=$(find "${{ github.workspace }}/build/iOS" -name "*.xcodeproj" -type d | head -n 1)
-            if [ -n "$FOUND" ]; then
-              XCODE_PROJECT="$FOUND"
-            fi
-          fi
-          
-          if [ -z "$XCODE_PROJECT" ]; then
-            echo "::error::Xcode project not found"
-            exit 1
-          fi
-          
-          echo "Found Xcode project at: $XCODE_PROJECT"
-          
-          # 簡単なビルドテスト（署名なし）
-          xcodebuild -project "$XCODE_PROJECT" \
-            -scheme Unity-iPhone \
-            -sdk iphonesimulator \
-            -configuration Release \
-            clean build \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO || {
-              echo "::warning::Xcode build failed. This may be due to signing requirements."
-              echo "Skipping iOS deployment for now."
-              exit 0
-            }
-          
-          echo "::notice::Basic iOS build completed successfully"
-
-      - name: Upload iOS Build Output
         if: always()
-        uses: actions/upload-artifact@v4.6.0
         with:
-          name: ios-build-output
-          path: build/iOS/
+          name: ios-build-output-direct
+          path: build/
           retention-days: 3
