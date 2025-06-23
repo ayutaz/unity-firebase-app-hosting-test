@@ -608,12 +608,9 @@ jobs:
             echo "Current DEVELOPMENT_TEAM settings:"
             grep -n "DEVELOPMENT_TEAM" "$PBXPROJ" | head -5
             
-            # CODE_SIGN_IDENTITYを設定
-            if [ -n "${{ secrets.IOS_CODE_SIGN_IDENTITY }}" ]; then
-              sed -i.bak "s/CODE_SIGN_IDENTITY = \".*\"/CODE_SIGN_IDENTITY = \"${{ secrets.IOS_CODE_SIGN_IDENTITY }}\"/g" "$PBXPROJ"
-            else
-              sed -i.bak 's/CODE_SIGN_IDENTITY = ".*"/CODE_SIGN_IDENTITY = "iPhone Distribution"/g' "$PBXPROJ"
-            fi
+            # CODE_SIGN_IDENTITYを設定 - Apple Developmentを使用
+            sed -i.bak 's/CODE_SIGN_IDENTITY = ".*"/CODE_SIGN_IDENTITY = "Apple Development"/g' "$PBXPROJ"
+            sed -i.bak 's/CODE_SIGN_IDENTITY = ""/CODE_SIGN_IDENTITY = "Apple Development"/g' "$PBXPROJ"
             
             # DEVELOPMENT_TEAMを設定 (IOS_DEVELOPMENT_TEAM または APPLE_TEAM_ID)
             TEAM_ID="${{ secrets.IOS_DEVELOPMENT_TEAM || secrets.APPLE_TEAM_ID }}"
@@ -624,6 +621,11 @@ jobs:
             
             # CODE_SIGN_STYLEをAutomaticに設定
             sed -i.bak 's/CODE_SIGN_STYLE = Manual/CODE_SIGN_STYLE = Automatic/g' "$PBXPROJ"
+            sed -i.bak 's/CODE_SIGN_STYLE = "Manual"/CODE_SIGN_STYLE = "Automatic"/g' "$PBXPROJ"
+            
+            # PROVISIONING_PROFILEをクリア（自動管理のため）
+            sed -i.bak 's/PROVISIONING_PROFILE_SPECIFIER = ".*"/PROVISIONING_PROFILE_SPECIFIER = ""/g' "$PBXPROJ"
+            sed -i.bak 's/PROVISIONING_PROFILE = ".*"/PROVISIONING_PROFILE = ""/g' "$PBXPROJ"
             
             # バックアップファイルを削除
             rm -f "$PBXPROJ.bak"
@@ -695,8 +697,12 @@ jobs:
             DEVELOPMENT_TEAM="$TEAM_ID" \
             PRODUCT_BUNDLE_IDENTIFIER="com.yousan" \
             CODE_SIGN_STYLE="Automatic" \
+            CODE_SIGN_IDENTITY="Apple Development" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            PROVISIONING_PROFILE="" \
             -allowProvisioningUpdates \
             -allowProvisioningDeviceRegistration \
+            ENABLE_BITCODE=NO \
             -verbose 2>&1 | tee xcodebuild.log || {
               echo "::error::Automatic signing failed"
               echo "=== Xcodebuild Error Details ==="
