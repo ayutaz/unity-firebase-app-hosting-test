@@ -507,6 +507,26 @@ jobs:
           
           rm -f temp.mobileprovision temp.plist
           
+      # 証明書の詳細確認
+      - name: Debug Certificate Details
+        run: |
+          echo "=== Certificate Debug Info ==="
+          # List all certificates
+          echo "All certificates in keychain:"
+          security find-identity -v || echo "No certificates found"
+          
+          echo ""
+          echo "Codesigning certificates:"
+          security find-identity -v -p codesigning || echo "No codesigning certificates"
+          
+          echo ""
+          echo "Default keychain:"
+          security default-keychain
+          
+          echo ""
+          echo "Keychain list:"
+          security list-keychains
+          
       # 証明書とプロファイルの確認
       - name: Verify Code Signing Setup
         env:

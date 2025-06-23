@@ -1,0 +1,167 @@
+name: iOS Simple App Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ fix/ios-build-workflow ]
+
+jobs:
+  build-simple-ios:
+    name: Build Simple iOS App
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        
+      - name: Create Simple iOS App
+        run: |
+          echo "=== Creating Simple iOS App ==="
+          mkdir -p SimpleApp
+          cd SimpleApp
+          
+          # Create Info.plist
+          cat > Info.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleDevelopmentRegion</key>
+              <string>en</string>
+              <key>CFBundleExecutable</key>
+              <string>SimpleApp</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.yousan</string>
+              <key>CFBundleInfoDictionaryVersion</key>
+              <string>6.0</string>
+              <key>CFBundleName</key>
+              <string>SimpleApp</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0</string>
+              <key>CFBundleVersion</key>
+              <string>1</string>
+              <key>LSRequiresIPhoneOS</key>
+              <true/>
+              <key>UILaunchStoryboardName</key>
+              <string>LaunchScreen</string>
+              <key>UIRequiredDeviceCapabilities</key>
+              <array>
+                  <string>armv7</string>
+              </array>
+              <key>UISupportedInterfaceOrientations</key>
+              <array>
+                  <string>UIInterfaceOrientationPortrait</string>
+              </array>
+          </dict>
+          </plist>
+          EOF
+          
+          # Create main.m
+          cat > main.m << 'EOF'
+          #import <UIKit/UIKit.h>
+          
+          @interface AppDelegate : UIResponder <UIApplicationDelegate>
+          @property (strong, nonatomic) UIWindow *window;
+          @end
+          
+          @implementation AppDelegate
+          - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+              self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
+              UIViewController *viewController = [[UIViewController alloc] init];
+              viewController.view.backgroundColor = [UIColor whiteColor];
+              
+              UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 200, 50)];
+              label.text = @"Hello iOS";
+              label.center = viewController.view.center;
+              label.textAlignment = NSTextAlignmentCenter;
+              [viewController.view addSubview:label];
+              
+              self.window.rootViewController = viewController;
+              [self.window makeKeyAndVisible];
+              return YES;
+          }
+          @end
+          
+          int main(int argc, char * argv[]) {
+              @autoreleasepool {
+                  return UIApplicationMain(argc, argv, nil, NSStringFromClass([AppDelegate class]));
+              }
+          }
+          EOF
+          
+      - name: Setup Signing
+        run: |
+          cd SimpleApp
+          
+          # Import certificate if available
+          if [ -n "${{ secrets.IOS_P12_BASE64 }}" ]; then
+            echo "${{ secrets.IOS_P12_BASE64 }}" | base64 --decode > cert.p12
+            
+            security create-keychain -p actions build.keychain
+            security default-keychain -s build.keychain
+            security unlock-keychain -p actions build.keychain
+            security import cert.p12 -k build.keychain -P "${{ secrets.IOS_P12_PASSWORD }}" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
+            
+            rm cert.p12
+          fi
+          
+          # Install provisioning profile if available
+          if [ -n "${{ secrets.IOS_MOBILEPROVISION_BASE64 }}" ]; then
+            echo "${{ secrets.IOS_MOBILEPROVISION_BASE64 }}" | base64 --decode > profile.mobileprovision
+            
+            mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+            UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" /dev/stdin <<< $(security cms -D -i profile.mobileprovision))
+            cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$UUID.mobileprovision
+            
+            rm profile.mobileprovision
+          fi
+          
+      - name: Build Simple App
+        run: |
+          cd SimpleApp
+          
+          TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
+          
+          echo "=== Building with Team ID: $TEAM_ID ==="
+          
+          # First try to compile without code signing
+          echo "=== Step 1: Compile without signing ==="
+          xcrun clang -fobjc-arc \
+            -target arm64-apple-ios12.0 \
+            -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+            -framework UIKit \
+            -framework Foundation \
+            main.m -o SimpleApp || {
+              echo "❌ Basic compilation failed"
+              exit 1
+            }
+          
+          echo "✅ Basic compilation succeeded"
+          
+          # Create app bundle structure
+          echo "=== Step 2: Create app bundle ==="
+          mkdir -p SimpleApp.app
+          cp SimpleApp SimpleApp.app/
+          cp Info.plist SimpleApp.app/
+          
+          # Try automatic signing
+          if [ -n "$TEAM_ID" ]; then
+            echo "=== Step 3: Try automatic code signing ==="
+            codesign --force --sign - --entitlements - --timestamp=none SimpleApp.app 2>&1 || {
+              echo "❌ Basic codesign failed"
+            }
+            
+            # Try with team
+            codesign --force --sign "Apple Development" --team "$TEAM_ID" SimpleApp.app 2>&1 || {
+              echo "❌ Team-based signing failed"
+              
+              # List available identities
+              echo "=== Available signing identities ==="
+              security find-identity -v -p codesigning
+            }
+          fi
+          
+          echo "=== App bundle created ==="
+          ls -la SimpleApp.app/

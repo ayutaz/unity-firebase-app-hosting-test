@@ -1,0 +1,151 @@
+name: iOS Certificate Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ fix/ios-build-workflow ]
+
+jobs:
+  validate-ios-certs:
+    name: Validate iOS Certificates
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        
+      - name: Validate All Secrets
+        run: |
+          echo "=== Secret Validation ==="
+          echo "APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID != '' && '✅ Set' || '❌ Not Set' }}"
+          echo "IOS_P12_BASE64: ${{ secrets.IOS_P12_BASE64 != '' && '✅ Set' || '❌ Not Set' }}"
+          echo "IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD != '' && '✅ Set' || '❌ Not Set' }}"
+          echo "IOS_MOBILEPROVISION_BASE64: ${{ secrets.IOS_MOBILEPROVISION_BASE64 != '' && '✅ Set' || '❌ Not Set' }}"
+          echo "FIREBASE_IOS_APP_ID: ${{ secrets.FIREBASE_IOS_APP_ID != '' && '✅ Set' || '❌ Not Set' }}"
+          
+      - name: Detailed Certificate Check
+        if: ${{ secrets.IOS_P12_BASE64 != '' }}
+        run: |
+          echo "=== Certificate Analysis ==="
+          # Decode certificate
+          echo "${{ secrets.IOS_P12_BASE64 }}" | base64 --decode > cert.p12
+          
+          # Extract certificate info without importing
+          echo "=== Certificate Details ==="
+          openssl pkcs12 -in cert.p12 -passin pass:"${{ secrets.IOS_P12_PASSWORD }}" -nokeys -clcerts 2>&1 | grep -E "(subject=|issuer=|notAfter=)" || {
+            echo "❌ Failed to read certificate with openssl"
+            echo "This might indicate wrong password or corrupted certificate"
+          }
+          
+          # Try to extract certificate type
+          openssl pkcs12 -in cert.p12 -passin pass:"${{ secrets.IOS_P12_PASSWORD }}" -nokeys -clcerts 2>/dev/null | grep -E "(iPhone Developer|iPhone Distribution|Apple Development|Apple Distribution)" || echo "Certificate type not found"
+          
+          rm cert.p12
+          
+      - name: Detailed Provisioning Profile Check
+        if: ${{ secrets.IOS_MOBILEPROVISION_BASE64 != '' }}
+        run: |
+          echo "=== Provisioning Profile Analysis ==="
+          # Decode profile
+          echo "${{ secrets.IOS_MOBILEPROVISION_BASE64 }}" | base64 --decode > profile.mobileprovision
+          
+          # Extract plist
+          security cms -D -i profile.mobileprovision > profile.plist 2>&1 || {
+            echo "❌ Failed to decode provisioning profile"
+            exit 1
+          }
+          
+          echo "=== Profile Details ==="
+          echo "Name: $(/usr/libexec/PlistBuddy -c 'Print :Name' profile.plist 2>/dev/null || echo 'ERROR')"
+          echo "UUID: $(/usr/libexec/PlistBuddy -c 'Print :UUID' profile.plist 2>/dev/null || echo 'ERROR')"
+          echo "Team ID: $(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' profile.plist 2>/dev/null || echo 'ERROR')"
+          echo "Creation Date: $(/usr/libexec/PlistBuddy -c 'Print :CreationDate' profile.plist 2>/dev/null || echo 'ERROR')"
+          echo "Expiration Date: $(/usr/libexec/PlistBuddy -c 'Print :ExpirationDate' profile.plist 2>/dev/null || echo 'ERROR')"
+          
+          # Check app identifier
+          APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' profile.plist 2>/dev/null || echo 'ERROR')
+          echo "App Identifier: $APP_ID"
+          
+          # Extract team ID from app identifier (format: TEAMID.bundleid)
+          PROFILE_TEAM_PREFIX=$(echo "$APP_ID" | cut -d'.' -f1)
+          echo "Team Prefix in Profile: $PROFILE_TEAM_PREFIX"
+          
+          # Check profile type
+          if /usr/libexec/PlistBuddy -c 'Print :ProvisionsAllDevices' profile.plist 2>/dev/null | grep -q "true"; then
+            echo "Profile Type: Ad Hoc or Enterprise"
+          elif /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' profile.plist 2>/dev/null > /dev/null; then
+            echo "Profile Type: Development or Ad Hoc"
+          else
+            echo "Profile Type: App Store"
+          fi
+          
+          # Check if get-task-allow is present (development profiles)
+          if /usr/libexec/PlistBuddy -c 'Print :Entitlements:get-task-allow' profile.plist 2>/dev/null | grep -q "true"; then
+            echo "Debug Entitlement: YES (Development profile)"
+          else
+            echo "Debug Entitlement: NO (Distribution profile)"
+          fi
+          
+          # List certificates in profile
+          echo ""
+          echo "=== Certificates in Profile ==="
+          /usr/libexec/PlistBuddy -c 'Print :DeveloperCertificates' profile.plist 2>/dev/null | grep -A1 "<data>" | grep -v "<data>" | head -3 || echo "No certificates found"
+          
+          rm profile.mobileprovision profile.plist
+          
+      - name: Test Certificate and Profile Compatibility
+        if: ${{ secrets.IOS_P12_BASE64 != '' && secrets.IOS_MOBILEPROVISION_BASE64 != '' }}
+        run: |
+          echo "=== Testing Compatibility ==="
+          
+          # Import certificate to temporary keychain
+          echo "${{ secrets.IOS_P12_BASE64 }}" | base64 --decode > cert.p12
+          
+          security create-keychain -p temp temp.keychain
+          security unlock-keychain -p temp temp.keychain
+          security import cert.p12 -P "${{ secrets.IOS_P12_PASSWORD }}" -k temp.keychain -T /usr/bin/codesign
+          
+          # Get certificate SHA1
+          CERT_SHA1=$(security find-identity -v -p codesigning temp.keychain | head -1 | awk '{print $1}')
+          echo "Certificate SHA1: $CERT_SHA1"
+          
+          # Get certificate common name
+          CERT_NAME=$(security find-identity -v -p codesigning temp.keychain | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "Certificate Name: $CERT_NAME"
+          
+          # Check profile
+          echo "${{ secrets.IOS_MOBILEPROVISION_BASE64 }}" | base64 --decode > profile.mobileprovision
+          security cms -D -i profile.mobileprovision > profile.plist
+          
+          # Compare team IDs
+          CERT_TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
+          PROFILE_TEAM_ID=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' profile.plist 2>/dev/null || echo '')
+          
+          echo ""
+          echo "=== Team ID Comparison ==="
+          echo "Certificate Team ID: $CERT_TEAM_ID"
+          echo "Profile Team ID: $PROFILE_TEAM_ID"
+          
+          if [ "$CERT_TEAM_ID" = "$PROFILE_TEAM_ID" ]; then
+            echo "✅ Team IDs match"
+          else
+            echo "❌ Team IDs DO NOT match!"
+          fi
+          
+          # Check bundle ID
+          APP_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' profile.plist 2>/dev/null || echo '')
+          EXPECTED_BUNDLE="com.yousan"
+          
+          echo ""
+          echo "=== Bundle ID Check ==="
+          echo "Profile App ID: $APP_ID"
+          echo "Expected Bundle ID: $EXPECTED_BUNDLE"
+          
+          if [[ "$APP_ID" == *"$EXPECTED_BUNDLE"* ]] || [[ "$APP_ID" == *"*"* ]]; then
+            echo "✅ Bundle ID compatible"
+          else
+            echo "❌ Bundle ID NOT compatible!"
+          fi
+          
+          # Cleanup
+          security delete-keychain temp.keychain
+          rm cert.p12 profile.mobileprovision profile.plist
