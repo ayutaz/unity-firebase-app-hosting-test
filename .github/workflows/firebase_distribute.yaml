@@ -750,16 +750,17 @@ jobs:
                   echo "=== End Manual Error Details ==="
                   echo "Checking xcodebuild error details..."
               
-              # シミュレータ向けビルドを試す（証明書不要）
-              echo "Trying simulator build without code signing..."
+              # まずはシミュレータビルドで成功を確認
+              echo "=== Trying simulator build first ==="
               xcodebuild -project "$XCODE_PROJECT" \
                 -scheme Unity-iPhone \
                 -sdk iphonesimulator \
-                -configuration Release \
-                -archivePath "${{ github.workspace }}/build/iOS/Unity-iPhone-Simulator.xcarchive" \
-                clean archive \
+                -configuration Debug \
+                -derivedDataPath "${{ github.workspace }}/build/DerivedData" \
+                build \
                 CODE_SIGNING_REQUIRED=NO \
-                CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild-simulator.log || {
+                CODE_SIGNING_ALLOWED=NO \
+                ONLY_ACTIVE_ARCH=YES 2>&1 | tee xcodebuild-simulator.log || {
                   echo "::error::Even simulator build failed. Checking project issues..."
                   echo "=== Simulator Build Error Details ==="
                   tail -50 xcodebuild-simulator.log | grep -E "(error|Error|ERROR|failed|Failed|FAILED)" || true
@@ -769,11 +770,23 @@ jobs:
                   exit 1
                 }
                 
-                echo "::warning::Only simulator build succeeded. Real device build requires proper signing configuration."
-                # シミュレータビルドは成功したが、実機ビルドのための設定が必要
-                ARCHIVE_PATH="${{ github.workspace }}/build/iOS/Unity-iPhone-Simulator.xcarchive"
-                echo "ARCHIVE_PATH=$ARCHIVE_PATH" >> $GITHUB_ENV
+                echo "✅ Simulator build succeeded!"
+                echo "BUILD_SUCCESS=true" >> $GITHUB_ENV
                 echo "BUILD_TYPE=simulator" >> $GITHUB_ENV
+                
+                # シミュレータビルドが成功したので、実機ビルドも試す
+                echo "=== Now trying real device build with minimal settings ==="
+                xcodebuild -project "$XCODE_PROJECT" \
+                  -scheme Unity-iPhone \
+                  -sdk iphoneos \
+                  -configuration Release \
+                  build \
+                  DEVELOPMENT_TEAM="$TEAM_ID" \
+                  CODE_SIGN_STYLE="Automatic" \
+                  -allowProvisioningUpdates || {
+                    echo "::warning::Real device build failed, but simulator build succeeded"
+                    echo "This is expected without proper certificates"
+                  }
               }
             }
           
