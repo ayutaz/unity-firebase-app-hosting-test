@@ -702,22 +702,16 @@ jobs:
           echo "Project: $XCODE_PROJECT"
           
           # より詳細なエラー情報を取得
-          xcodebuild -project "$XCODE_PROJECT" \
-            -scheme Unity-iPhone \
+          eval $BUILD_CMD \
             -sdk iphoneos \
             -configuration Release \
             -archivePath "${{ github.workspace }}/build/iOS/Unity-iPhone.xcarchive" \
             clean archive \
             DEVELOPMENT_TEAM="$TEAM_ID" \
-            PRODUCT_BUNDLE_IDENTIFIER="com.yousan" \
             CODE_SIGN_STYLE="Automatic" \
-            CODE_SIGN_IDENTITY="Apple Development" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            PROVISIONING_PROFILE="" \
             -allowProvisioningUpdates \
             -allowProvisioningDeviceRegistration \
-            ENABLE_BITCODE=NO \
-            -verbose 2>&1 | tee xcodebuild.log || {
+            2>&1 | tee xcodebuild.log || {
               echo "::error::Automatic signing failed"
               echo "=== Xcodebuild Error Details ==="
               tail -50 xcodebuild.log | grep -E "(error|Error|ERROR|failed|Failed|FAILED)" || true

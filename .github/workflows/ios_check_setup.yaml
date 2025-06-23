@@ -1,0 +1,82 @@
+name: iOS Setup Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ fix/ios-build-workflow ]
+
+jobs:
+  check-ios-setup:
+    name: Check iOS Setup
+    runs-on: macos-latest
+    steps:
+      - name: Check All Requirements
+        run: |
+          echo "=== iOS Build Requirements Check ==="
+          echo ""
+          
+          echo "1. Checking Secrets:"
+          echo -n "   APPLE_TEAM_ID: "
+          if [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then echo "✅ Set"; else echo "❌ Not Set"; fi
+          
+          echo -n "   IOS_P12_BASE64: "
+          if [ -n "${{ secrets.IOS_P12_BASE64 }}" ]; then echo "✅ Set"; else echo "❌ Not Set"; fi
+          
+          echo -n "   IOS_P12_PASSWORD: "
+          if [ -n "${{ secrets.IOS_P12_PASSWORD }}" ]; then echo "✅ Set"; else echo "❌ Not Set"; fi
+          
+          echo -n "   IOS_MOBILEPROVISION_BASE64: "
+          if [ -n "${{ secrets.IOS_MOBILEPROVISION_BASE64 }}" ]; then echo "✅ Set"; else echo "❌ Not Set"; fi
+          
+          echo ""
+          echo "2. Certificate Details:"
+          if [ -n "${{ secrets.IOS_P12_BASE64 }}" ]; then
+            echo "${{ secrets.IOS_P12_BASE64 }}" | base64 --decode > cert.p12
+            
+            # Try to get certificate info
+            echo "   Certificate info:"
+            keytool -list -v -keystore cert.p12 -storepass "${{ secrets.IOS_P12_PASSWORD }}" -storetype PKCS12 2>/dev/null | grep -E "(Alias|Owner|Issuer|Valid)" | head -10 || {
+              echo "   ❌ Failed to read certificate with keytool"
+            }
+            
+            rm cert.p12
+          else
+            echo "   ❌ No certificate available"
+          fi
+          
+          echo ""
+          echo "3. Provisioning Profile Details:"
+          if [ -n "${{ secrets.IOS_MOBILEPROVISION_BASE64 }}" ]; then
+            echo "${{ secrets.IOS_MOBILEPROVISION_BASE64 }}" | base64 --decode > profile.mobileprovision
+            
+            security cms -D -i profile.mobileprovision > profile.plist 2>/dev/null || {
+              echo "   ❌ Failed to decode profile"
+              exit 1
+            }
+            
+            echo "   Profile Name: $(/usr/libexec/PlistBuddy -c 'Print :Name' profile.plist)"
+            echo "   Team ID: $(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' profile.plist)"
+            echo "   App ID: $(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' profile.plist)"
+            
+            # Check expiration
+            EXPIRY=$(/usr/libexec/PlistBuddy -c 'Print :ExpirationDate' profile.plist)
+            echo "   Expiration: $EXPIRY"
+            
+            # Check if it's development or distribution
+            if /usr/libexec/PlistBuddy -c 'Print :Entitlements:get-task-allow' profile.plist 2>/dev/null | grep -q "true"; then
+              echo "   Type: Development Profile"
+            else
+              echo "   Type: Distribution Profile"
+            fi
+            
+            rm profile.mobileprovision profile.plist
+          else
+            echo "   ❌ No provisioning profile available"
+          fi
+          
+          echo ""
+          echo "4. Recommendations:"
+          echo "   - Make sure certificate type matches profile type (both Development or both Distribution)"
+          echo "   - Ensure Team ID in profile matches APPLE_TEAM_ID secret"
+          echo "   - Verify Bundle ID is 'com.yousan'"
+          echo "   - Check certificate and profile are not expired"
