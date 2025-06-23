@@ -602,6 +602,11 @@ jobs:
           if [ -f "$PBXPROJ" ]; then
             echo "Updating project.pbxproj for proper code signing..."
             
+            # 修正スクリプトをダウンロードして実行
+            curl -sL https://raw.githubusercontent.com/ayutaz/unity-firebase-app-hosting-test/fix/ios-build-workflow/fix_unity_xcode_project.sh -o fix_project.sh
+            chmod +x fix_project.sh
+            ./fix_project.sh "$PBXPROJ" "${TEAM_ID}" || echo "Script execution failed, continuing with inline fixes"
+            
             # 現在の設定を確認
             echo "Current CODE_SIGN_IDENTITY settings:"
             grep -n "CODE_SIGN_IDENTITY" "$PBXPROJ" | head -5
@@ -656,6 +661,15 @@ jobs:
           # Xcodeプロジェクトの構成を確認
           echo "=== Available Schemes ==="
           xcodebuild -project "$XCODE_PROJECT" -list
+          
+          # ワークスペースがある場合はそれを使用
+          XCODE_WORKSPACE=$(find build/iOS -name "*.xcworkspace" -type d | head -n 1)
+          if [ -n "$XCODE_WORKSPACE" ]; then
+            echo "Found workspace: $XCODE_WORKSPACE"
+            BUILD_CMD="xcodebuild -workspace \"$XCODE_WORKSPACE\" -scheme Unity-iPhone"
+          else
+            BUILD_CMD="xcodebuild -project \"$XCODE_PROJECT\" -scheme Unity-iPhone"
+          fi
           
           # アーカイブを作成（実機向け）
           echo "Starting xcodebuild archive..."

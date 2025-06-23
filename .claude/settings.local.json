@@ -20,7 +20,8 @@
       "Bash(yamllint:*)",
       "Bash(find:*)",
       "Bash(curl:*)",
-      "Bash(touch:*)"
+      "Bash(touch:*)",
+      "Bash(chmod:*)"
     ],
     "deny": []
   }
