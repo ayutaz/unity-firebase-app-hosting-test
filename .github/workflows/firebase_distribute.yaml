@@ -712,6 +712,25 @@ jobs:
           echo "Using DEVELOPMENT_TEAM: $TEAM_ID"
           echo "Project: $XCODE_PROJECT"
           
+          # シンプルなビルドスクリプトを使用
+          if [ -f "${{ github.workspace }}/build_ios.sh" ]; then
+            echo "=== Using simple build script ==="
+            cd $(dirname "$XCODE_PROJECT")
+            APPLE_TEAM_ID="$TEAM_ID" "${{ github.workspace }}/build_ios.sh" && {
+              echo "✅ Simple build script succeeded!"
+              echo "BUILD_SUCCESS=true" >> $GITHUB_ENV
+              echo "BUILD_TYPE=simulator" >> $GITHUB_ENV
+              
+              # IPAがあればコピー
+              if [ -f "simulator-app.ipa" ]; then
+                cp simulator-app.ipa "${{ github.workspace }}/build/iOS/"
+              fi
+              
+              # 成功したので残りの処理をスキップ
+              exit 0
+            }
+          fi
+          
           # より詳細なエラー情報を取得
           # まず証明書なしでビルド
           echo "=== Attempting build without signing first ==="
