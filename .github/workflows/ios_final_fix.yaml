@@ -1,0 +1,148 @@
+name: iOS Final Fix
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ fix/ios-build-workflow ]
+
+env:
+  UNITY_VERSION: '6000.0.43f1'
+
+jobs:
+  ios-final-build:
+    name: iOS Final Build and Deploy
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+          
+      - name: Cache Unity Library
+        uses: actions/cache@v4.2.0
+        with:
+          path: Library
+          key: Library-iOS-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          
+      - name: Build Unity iOS Project
+        uses: game-ci/unity-builder@v4.3.0
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        with:
+          targetPlatform: iOS
+          buildsPath: build
+          buildName: iOS
+          unityVersion: ${{ env.UNITY_VERSION }}
+          
+      - name: Fix and Build iOS App
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          echo "=== iOS Final Build ==="
+          
+          # Find Xcode project
+          XCODE_PROJECT=$(find build -name "*.xcodeproj" -type d | head -n 1)
+          if [ -z "$XCODE_PROJECT" ]; then
+            echo "::error::No Xcode project found"
+            exit 1
+          fi
+          
+          echo "Found project: $XCODE_PROJECT"
+          
+          # Create a post-build script to handle signing
+          cat > fix_codesign.sh << 'EOF'
+          #!/bin/bash
+          # This script bypasses code signing for CI builds
+          
+          TEAM_ID="$1"
+          APP_PATH="$2"
+          
+          # Create minimal entitlements
+          cat > entitlements.plist << 'ENTITLEMENTS'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>application-identifier</key>
+              <string>${TEAM_ID}.com.yousan</string>
+              <key>com.apple.developer.team-identifier</key>
+              <string>${TEAM_ID}</string>
+              <key>get-task-allow</key>
+              <true/>
+          </dict>
+          </plist>
+          ENTITLEMENTS
+          
+          # Ad-hoc sign the app
+          codesign --force --sign - --entitlements entitlements.plist --timestamp=none "$APP_PATH"
+          
+          echo "App signed with ad-hoc signature"
+          EOF
+          
+          chmod +x fix_codesign.sh
+          
+          # Build the app without code signing first
+          echo "=== Building without code signing ==="
+          xcodebuild -project "$XCODE_PROJECT" \
+            -scheme Unity-iPhone \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath "$PWD/DerivedData" \
+            build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO || {
+              echo "::error::Build failed"
+              exit 1
+            }
+            
+          # Find the built app
+          APP_PATH=$(find DerivedData -name "*.app" -type d | grep -v "\.xcarchive" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::No app bundle found"
+            exit 1
+          fi
+          
+          echo "Found app: $APP_PATH"
+          
+          # Apply ad-hoc signature
+          ./fix_codesign.sh "$TEAM_ID" "$APP_PATH"
+          
+          # Create IPA manually
+          echo "=== Creating IPA ==="
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r app.ipa Payload
+          
+          echo "IPA created: app.ipa"
+          ls -la app.ipa
+          
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4.6.0
+        with:
+          name: ios-app-ipa
+          path: app.ipa
+          
+      - name: Deploy to Firebase
+        if: github.event_name != 'pull_request'
+        run: |
+          # Install Firebase CLI
+          curl -sL https://firebase.tools | bash
+          
+          # Setup service account
+          echo "${{ secrets.GCP_SA_KEY }}" | base64 --decode > sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS="$PWD/sa.json"
+          
+          # Upload to Firebase App Distribution
+          if [ -f "app.ipa" ]; then
+            firebase appdistribution:distribute app.ipa \
+              --app ${{ secrets.FIREBASE_IOS_APP_ID }} \
+              --groups "testers" \
+              --release-notes "iOS build from GitHub Actions"
+          else
+            echo "::warning::No IPA file found to deploy"
+          fi
