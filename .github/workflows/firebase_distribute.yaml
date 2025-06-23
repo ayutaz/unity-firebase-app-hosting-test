@@ -673,9 +673,8 @@ jobs:
           
           # アーカイブを作成（実機向け）
           echo "Starting xcodebuild archive..."
-          echo "Using DEVELOPMENT_TEAM: $DEVELOPMENT_TEAM"
-          echo "Using CODE_SIGN_IDENTITY: $CODE_SIGN_IDENTITY"
-          echo "Using PROFILE_UUID: ${{ env.PROFILE_UUID }}"
+          echo "Using DEVELOPMENT_TEAM: $TEAM_ID"
+          echo "Using automatic code signing"
           
           # まずプロジェクト設定を確認
           echo "=== Checking Xcode Project Settings ==="
