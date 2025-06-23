@@ -31,35 +31,113 @@ if [ -f "$PBXPROJ" ]; then
     rm -f "$PBXPROJ.bak"
 fi
 
-# ビルド（シミュレータ）
-echo "Building for simulator..."
+# ビルド（実機優先、シミュレータへフォールバック）
+echo "Attempting real device build..."
+
+# 実機向けビルドを試す
 xcodebuild -project "$PROJECT" \
     -scheme Unity-iPhone \
-    -sdk iphonesimulator \
-    -configuration Debug \
+    -sdk iphoneos \
+    -configuration Release \
     -derivedDataPath DerivedData \
     build \
-    CODE_SIGNING_ALLOWED=NO \
-    ONLY_ACTIVE_ARCH=YES \
-    -quiet || {
-        echo "Simulator build failed"
-        exit 1
+    DEVELOPMENT_TEAM="$TEAM_ID" \
+    CODE_SIGN_STYLE="Automatic" \
+    -allowProvisioningUpdates \
+    -quiet && {
+        echo "✅ Real device build succeeded!"
+        BUILD_TYPE="device"
+    } || {
+        echo "Real device build failed, falling back to simulator..."
+        # シミュレータビルドにフォールバック
+        xcodebuild -project "$PROJECT" \
+            -scheme Unity-iPhone \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -derivedDataPath DerivedData \
+            build \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=YES \
+            -quiet || {
+                echo "Simulator build also failed"
+                exit 1
+            }
+        BUILD_TYPE="simulator"
     }
 
-echo "✅ Simulator build succeeded!"
+echo "✅ Build succeeded! (Type: $BUILD_TYPE)"
+echo "BUILD_TYPE=$BUILD_TYPE" >> $GITHUB_ENV
 
 # アプリバンドルを探す
 APP=$(find DerivedData -name "*.app" -type d | head -1)
 if [ -n "$APP" ]; then
     echo "Found app: $APP"
     
-    # IPAを作成（シミュレータ用なので配布はできないが、ビルド成功の証明）
-    mkdir -p Payload
-    cp -r "$APP" Payload/
-    zip -r simulator-app.ipa Payload
-    rm -rf Payload
-    
-    echo "✅ IPA created: simulator-app.ipa"
+    if [ "$BUILD_TYPE" = "device" ]; then
+        # 実機向けのIPAを作成
+        echo "Creating IPA for real device..."
+        
+        # ExportOptions.plistを作成
+        cat > ExportOptions.plist <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>method</key>
+    <string>development</string>
+    <key>teamID</key>
+    <string>$TEAM_ID</string>
+    <key>uploadBitcode</key>
+    <false/>
+    <key>compileBitcode</key>
+    <false/>
+    <key>uploadSymbols</key>
+    <false/>
+    <key>signingStyle</key>
+    <string>automatic</string>
+</dict>
+</plist>
+EOF
+        
+        # アーカイブを作成
+        xcodebuild -project "$PROJECT" \
+            -scheme Unity-iPhone \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath "Unity-iPhone.xcarchive" \
+            archive \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE="Automatic" \
+            -allowProvisioningUpdates && {
+            
+            # IPAをエクスポート
+            xcodebuild -exportArchive \
+                -archivePath "Unity-iPhone.xcarchive" \
+                -exportPath . \
+                -exportOptionsPlist ExportOptions.plist && {
+                echo "✅ IPA created for real device!"
+            } || {
+                echo "IPA export failed, creating manual IPA..."
+                mkdir -p Payload
+                cp -r "$APP" Payload/
+                zip -r app.ipa Payload
+                rm -rf Payload
+            }
+        } || {
+            echo "Archive failed, creating manual IPA..."
+            mkdir -p Payload
+            cp -r "$APP" Payload/
+            zip -r app.ipa Payload
+            rm -rf Payload
+        }
+    else
+        # シミュレータ用のIPAを作成（配布はできないが、ビルド成功の証明）
+        mkdir -p Payload
+        cp -r "$APP" Payload/
+        zip -r simulator-app.ipa Payload
+        rm -rf Payload
+        echo "✅ IPA created: simulator-app.ipa (simulator build)"
+    fi
 fi
 
 echo "=== Build completed successfully ==="

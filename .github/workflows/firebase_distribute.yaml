@@ -931,7 +931,7 @@ jobs:
 
       # Firebase App Distributionへのデプロイ
       - name: Deploy to Firebase App Distribution
-        if: github.event_name != 'pull_request' && env.BUILD_SUCCESS == 'true' && env.BUILD_TYPE != 'simulator'
+        if: github.event_name != 'pull_request' && env.BUILD_SUCCESS == 'true'
         run: |
           # Firebase CLI インストール
           curl -sL https://firebase.tools | bash
@@ -946,6 +946,17 @@ jobs:
           if [ -z "$IPA_FILE" ]; then
             # 手動作成のIPAを探す
             IPA_FILE=$(find "${{ github.workspace }}/build" -name "app.ipa" -type f | head -n 1)
+          fi
+          
+          # シミュレータビルドの場合はスキップ
+          if [ "${{ env.BUILD_TYPE }}" = "simulator" ]; then
+            echo "::warning::Simulator build detected. Firebase App Distribution does not support simulator builds."
+            echo "To deploy to Firebase, you need:"
+            echo "1. Valid iOS certificates (P12)"
+            echo "2. Valid provisioning profile"
+            echo "3. Correct Team ID"
+            echo "Skipping Firebase deployment for simulator build."
+            exit 0
           fi
           
           if [ -z "$IPA_FILE" ]; then
