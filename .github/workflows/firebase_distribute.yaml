@@ -858,17 +858,31 @@ jobs:
             }
           fi
 
+      - name: Check Build Success
+        id: check-build
+        if: always()
+        run: |
+          if [ "${{ env.BUILD_SUCCESS }}" = "true" ]; then
+            echo "::notice::iOS build succeeded (simulator)"
+            echo "success=true" >> $GITHUB_OUTPUT
+          else
+            echo "::error::iOS build failed"
+            echo "success=false" >> $GITHUB_OUTPUT
+          fi
+          
       - name: Upload iOS Build Artifact
         uses: actions/upload-artifact@v4.6.0
         if: always()
         with:
           name: ios-build-output
-          path: build/iOS/
+          path: |
+            build/iOS/
+            build/DerivedData/
           retention-days: 3
 
       # Firebase App Distributionへのデプロイ
       - name: Deploy to Firebase App Distribution
-        if: github.event_name != 'pull_request' && success()
+        if: github.event_name != 'pull_request' && env.BUILD_TYPE != 'simulator'
         run: |
           # Firebase CLI インストール
           curl -sL https://firebase.tools | bash
