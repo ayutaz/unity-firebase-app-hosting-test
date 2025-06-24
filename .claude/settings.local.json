@@ -23,7 +23,10 @@
       "Bash(touch:*)",
       "Bash(chmod:*)",
       "Bash(git remote get-url:*)",
-      "Bash(gh run view:*)"
+      "Bash(gh run view:*)",
+      "Bash(git fetch:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)"
     ],
     "deny": []
   }
