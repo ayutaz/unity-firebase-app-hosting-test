@@ -42,8 +42,11 @@ security find-identity -v -p codesigning | head -10 || echo "No codesigning cert
 echo "Checking provisioning profiles..."
 ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/" 2>/dev/null | head -10 || echo "No provisioning profiles found"
 
-# 実機向けビルドを試す
-echo "Attempting device build with Team ID: $TEAM_ID"
+# 実機向けビルドを試す（自動署名を使用）
+echo "Attempting device build with automatic signing..."
+echo "Team ID: $TEAM_ID"
+
+# まず自動署名でビルドを試みる
 xcodebuild -project "$PROJECT" \
     -scheme Unity-iPhone \
     -sdk iphoneos \
@@ -52,7 +55,9 @@ xcodebuild -project "$PROJECT" \
     build \
     DEVELOPMENT_TEAM="$TEAM_ID" \
     CODE_SIGN_STYLE="Automatic" \
-    -allowProvisioningUpdates && {
+    CODE_SIGN_IDENTITY="-" \
+    -allowProvisioningUpdates \
+    -allowProvisioningDeviceRegistration && {
         echo "✅ Real device build succeeded!"
         BUILD_TYPE="device"
     } || {
