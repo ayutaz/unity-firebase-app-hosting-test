@@ -22,7 +22,8 @@
       "Bash(curl:*)",
       "Bash(touch:*)",
       "Bash(chmod:*)",
-      "Bash(git remote get-url:*)"
+      "Bash(git remote get-url:*)",
+      "Bash(gh run view:*)"
     ],
     "deny": []
   }
