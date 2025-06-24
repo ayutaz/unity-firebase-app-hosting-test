@@ -72,7 +72,7 @@ jobs:
           path: build/Android/MyAndroidApp.apk
 
       - name: Deploy to Firebase App Distribution
-        if: github.event_name != 'pull_request'
+        if: success()
         run: |
           # Google Cloud SDKのインストール
           sudo apt-get update
@@ -98,10 +98,15 @@ jobs:
           export GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/service_account.json"
           
           # 3) Firebase CLI を使ってアップロード
+          RELEASE_NOTES="Build #${{ github.run_number }} from ${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RELEASE_NOTES="PR #${{ github.event.pull_request.number }} - $RELEASE_NOTES"
+          fi
+          
           firebase appdistribution:distribute build/Android/MyAndroidApp.apk \
             --app ${{ secrets.FIREBASE_ANDROID_APP_ID }} \
             --groups "testers" \
-            --release-notes "Release from GitHub Actions" \
+            --release-notes "$RELEASE_NOTES" \
   build-webgl:
     name: Build and Deploy WebGL
     runs-on: ubuntu-latest
@@ -171,7 +176,7 @@ jobs:
           echo "CHANNEL_ID=$CHANNEL_ID" >> $GITHUB_ENV
       # Firebase CLI を使って Hosting にデプロイ（PRでない場合のみ）
       - name: Deploy to Firebase Hosting using CLI
-        if: github.event_name != 'pull_request'
+        if: success()
         run: |
           # Firebase CLI インストール
           if ! command -v firebase &> /dev/null; then
@@ -931,7 +936,7 @@ jobs:
 
       # Firebase App Distributionへのデプロイ
       - name: Deploy to Firebase App Distribution
-        if: github.event_name != 'pull_request' && env.BUILD_SUCCESS == 'true'
+        if: env.BUILD_SUCCESS == 'true'
         run: |
           # Firebase CLI インストール
           curl -sL https://firebase.tools | bash
@@ -967,7 +972,12 @@ jobs:
           echo "Found IPA file: $IPA_FILE"
           
           # Firebase App Distributionへアップロード
+          RELEASE_NOTES="Build #${{ github.run_number }} from ${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RELEASE_NOTES="PR #${{ github.event.pull_request.number }} - $RELEASE_NOTES"
+          fi
+          
           firebase appdistribution:distribute "$IPA_FILE" \
             --app ${{ secrets.FIREBASE_IOS_APP_ID }} \
             --groups "testers" \
-            --release-notes "Release from GitHub Actions - Build #${{ github.run_number }}"
+            --release-notes "$RELEASE_NOTES"
