@@ -47,15 +47,17 @@ echo "Attempting device build with automatic signing..."
 echo "Team ID: $TEAM_ID"
 
 # まず自動署名でビルドを試みる
+echo "Attempting build with: TEAM_ID=$TEAM_ID"
 xcodebuild -project "$PROJECT" \
     -scheme Unity-iPhone \
     -sdk iphoneos \
     -configuration Release \
     -derivedDataPath DerivedData \
-    build \
+    clean build \
     DEVELOPMENT_TEAM="$TEAM_ID" \
     CODE_SIGN_STYLE="Automatic" \
     CODE_SIGN_IDENTITY="-" \
+    PROVISIONING_PROFILE_SPECIFIER="" \
     -allowProvisioningUpdates \
     -allowProvisioningDeviceRegistration && {
         echo "✅ Real device build succeeded!"
@@ -121,15 +123,19 @@ if [ -n "$APP" ]; then
 EOF
         
         # アーカイブを作成
+        echo "Creating archive for export..."
         xcodebuild -project "$PROJECT" \
             -scheme Unity-iPhone \
             -sdk iphoneos \
             -configuration Release \
             -archivePath "Unity-iPhone.xcarchive" \
-            archive \
+            clean archive \
             DEVELOPMENT_TEAM="$TEAM_ID" \
             CODE_SIGN_STYLE="Automatic" \
-            -allowProvisioningUpdates && {
+            CODE_SIGN_IDENTITY="-" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            -allowProvisioningUpdates \
+            -allowProvisioningDeviceRegistration && {
             
             # IPAをエクスポート
             xcodebuild -exportArchive \
