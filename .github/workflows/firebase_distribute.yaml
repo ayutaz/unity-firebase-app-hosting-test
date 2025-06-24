@@ -400,6 +400,22 @@ jobs:
           # Decode certificate
           echo "$P12_BASE64" | base64 --decode > certificate.p12
           
+          # Check certificate file size
+          CERT_SIZE=$(stat -f%z certificate.p12 2>/dev/null || stat -c%s certificate.p12)
+          echo "Certificate file size: $CERT_SIZE bytes"
+          
+          if [ "$CERT_SIZE" -lt 100 ]; then
+            echo "::error::Certificate file is too small, likely base64 decode failed"
+            exit 1
+          fi
+          
+          # Verify P12 file
+          echo "Verifying P12 file..."
+          openssl pkcs12 -info -in certificate.p12 -passin pass:"$P12_PASSWORD" -noout || {
+            echo "::error::Invalid P12 file or wrong password"
+            exit 1
+          }
+          
           # Create temporary keychain
           KEYCHAIN_PATH="$HOME/Library/Keychains/ios-signing.keychain-db"
           KEYCHAIN_PASSWORD="temporary-password-$(date +%s)"
@@ -869,7 +885,7 @@ jobs:
               <string>${CODE_SIGN_IDENTITY}</string>
               <key>provisioningProfiles</key>
               <dict>
-                  <key>com.yousan.unityfirebaseapp</key>
+                  <key>com.yousan</key>
                   <string>${{ env.PROFILE_UUID }}</string>
               </dict>
           </dict>
