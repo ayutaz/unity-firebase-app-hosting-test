@@ -34,7 +34,16 @@ fi
 # ビルド（実機優先、シミュレータへフォールバック）
 echo "Attempting real device build..."
 
+# 証明書の確認
+echo "Checking available certificates..."
+security find-identity -v -p codesigning | head -10 || echo "No codesigning certificates found"
+
+# プロビジョニングプロファイルの確認
+echo "Checking provisioning profiles..."
+ls -la "$HOME/Library/MobileDevice/Provisioning Profiles/" 2>/dev/null | head -10 || echo "No provisioning profiles found"
+
 # 実機向けビルドを試す
+echo "Attempting device build with Team ID: $TEAM_ID"
 xcodebuild -project "$PROJECT" \
     -scheme Unity-iPhone \
     -sdk iphoneos \
@@ -43,12 +52,20 @@ xcodebuild -project "$PROJECT" \
     build \
     DEVELOPMENT_TEAM="$TEAM_ID" \
     CODE_SIGN_STYLE="Automatic" \
-    -allowProvisioningUpdates \
-    -quiet && {
+    -allowProvisioningUpdates && {
         echo "✅ Real device build succeeded!"
         BUILD_TYPE="device"
     } || {
-        echo "Real device build failed, falling back to simulator..."
+        echo "Real device build failed with error code: $?"
+        echo "Checking xcodebuild error details..."
+        # エラーの詳細を表示
+        xcodebuild -project "$PROJECT" \
+            -scheme Unity-iPhone \
+            -sdk iphoneos \
+            -configuration Release \
+            -showBuildSettings | grep -E "(DEVELOPMENT_TEAM|CODE_SIGN|PROVISIONING)" | head -20
+        
+        echo "Falling back to simulator build..."
         # シミュレータビルドにフォールバック
         xcodebuild -project "$PROJECT" \
             -scheme Unity-iPhone \
@@ -57,8 +74,7 @@ xcodebuild -project "$PROJECT" \
             -derivedDataPath DerivedData \
             build \
             CODE_SIGNING_ALLOWED=NO \
-            ONLY_ACTIVE_ARCH=YES \
-            -quiet || {
+            ONLY_ACTIVE_ARCH=YES || {
                 echo "Simulator build also failed"
                 exit 1
             }

@@ -48,8 +48,8 @@ public class iOSBuildPostProcessor
             PlistDocument plist = new PlistDocument();
             plist.ReadFromFile(plistPath);
 
-            // Bundle IDを設定
-            plist.root.SetString("CFBundleIdentifier", "com.yousan");
+            // Bundle IDを設定（逆DNS形式）
+            plist.root.SetString("CFBundleIdentifier", "com.yousan.unityfirebaseapp");
 
             // plistを保存
             plist.WriteToFile(plistPath);

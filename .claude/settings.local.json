@@ -21,7 +21,8 @@
       "Bash(find:*)",
       "Bash(curl:*)",
       "Bash(touch:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(git remote get-url:*)"
     ],
     "deny": []
   }

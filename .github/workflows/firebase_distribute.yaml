@@ -726,11 +726,13 @@ jobs:
             APPLE_TEAM_ID="$TEAM_ID" "${{ github.workspace }}/build_ios.sh" && {
               echo "✅ Simple build script succeeded!"
               echo "BUILD_SUCCESS=true" >> $GITHUB_ENV
-              echo "BUILD_TYPE=simulator" >> $GITHUB_ENV
+              # BUILD_TYPEは build_ios.sh 内で設定される
               
-              # IPAがあればコピー
-              if [ -f "simulator-app.ipa" ]; then
-                cp simulator-app.ipa "${{ github.workspace }}/build/iOS/"
+              # IPAファイルを探してコピー
+              IPA_FILE=$(find . -name "*.ipa" -type f | head -1)
+              if [ -n "$IPA_FILE" ]; then
+                echo "Found IPA: $IPA_FILE"
+                cp "$IPA_FILE" "${{ github.workspace }}/build/iOS/"
               fi
               
               # 成功したので残りの処理をスキップ
@@ -867,7 +869,7 @@ jobs:
               <string>${CODE_SIGN_IDENTITY}</string>
               <key>provisioningProfiles</key>
               <dict>
-                  <key>com.yousan</key>
+                  <key>com.yousan.unityfirebaseapp</key>
                   <string>${{ env.PROFILE_UUID }}</string>
               </dict>
           </dict>
