@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git push:*)",
+      "Bash(gh pr view:*)",
+      "Bash(git commit:*)",
+      "Bash(mv:*)",
+      "Bash(gh run list:*)",
+      "Bash(grep:*)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:api.github.com)",
+      "Bash(ls:*)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(mkdir:*)",
+      "Bash(rm:*)",
+      "Bash(git stash:*)",
+      "Bash(yamllint:*)",
+      "Bash(find:*)",
+      "Bash(curl:*)",
+      "Bash(touch:*)",
+      "Bash(chmod:*)",
+      "Bash(git remote get-url:*)",
+      "Bash(gh run view:*)",
+      "Bash(git fetch:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)"
+    ],
+    "deny": []
+  }
+}
